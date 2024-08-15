@@ -190,7 +190,7 @@ class LoginAPIView(generics.GenericAPIView):
 
         # Retrieve all stream URLs for the user
         streams = CameraStream.objects.filter(user=user)
-        stream_urls = [stream.stream_url for stream in streams]
+        stream_urls = [{'id': stream.id, 'name': stream.camera.name, 'url': f'ws://13.200.111.211/ws/camera/{stream.id}/'} for stream in streams]
 
         return Response({
             'user_info': {

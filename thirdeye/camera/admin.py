@@ -1,6 +1,6 @@
 # camera/admin.py
 from django.contrib import admin
-from .models import StaticCamera, DDNSCamera, TempFace, PermFace, CameraStream
+from .models import StaticCamera, DDNSCamera, TempFace,  CameraStream
 
 @admin.register(StaticCamera)
 class StaticCameraAdmin(admin.ModelAdmin):
@@ -12,11 +12,9 @@ class DDNSCameraAdmin(admin.ModelAdmin):
 
 @admin.register(TempFace)
 class TempFaceAdmin(admin.ModelAdmin):
-    list_display = ('user', 'face_id', 'timestamp', 'processed')
+    list_display = ('user', 'face_id','last_seen','image_path')
 
-@admin.register(PermFace)
-class PermFaceAdmin(admin.ModelAdmin):
-    list_display = ('user', 'name', 'last_seen')
+
 
 @admin.register(CameraStream)
 class CameraStreamAdmin(admin.ModelAdmin):

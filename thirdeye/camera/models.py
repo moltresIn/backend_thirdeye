@@ -4,25 +4,26 @@ from django.conf import settings
 import os
 from django.utils import timezone
 from urllib.parse import quote
+import datetime
 
 class TempFace(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     face_id = models.CharField(max_length=20, unique=True)
-    image_paths = models.JSONField(default=list)
-    timestamp = models.DateTimeField(auto_now_add=True)
-    processed = models.BooleanField(default=False)
-class PermFace(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    name = models.CharField(max_length=100)
-    embeddings = models.JSONField(default=list)
-    image_paths = models.JSONField(default=list)
+    image_path = models.CharField(max_length=255, default=list)  # Changed from JSONField to CharField
     last_seen = models.DateTimeField(auto_now=True)
 
     def save(self, *args, **kwargs):
-        if self.name.startswith("Unknown"):
-            max_unknown = PermFace.objects.filter(name__startswith="Unknown", user=self.user).count()
-            self.name = f"Unknown{max_unknown + 1:03d}"
+        if not self.face_id:
+            # Generate a unique face_id if not provided
+            max_id = TempFace.objects.filter(user=self.user).aggregate(models.Max('face_id'))['face_id__max']
+            if max_id:
+                num = int(max_id.split('_')[-1]) + 1
+            else:
+                num = 1
+            self.face_id = f"unknown_{num:03d}"
         super().save(*args, **kwargs)
+
+
 class StaticCamera(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     ip_address = models.CharField(max_length=255)
