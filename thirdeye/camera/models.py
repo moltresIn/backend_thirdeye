@@ -6,22 +6,38 @@ from django.utils import timezone
 from urllib.parse import quote
 import datetime
 
-class TempFace(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    face_id = models.CharField(max_length=20, unique=True)
-    image_path = models.CharField(max_length=255, default=list)  # Changed from JSONField to CharField
-    last_seen = models.DateTimeField(auto_now=True)
+# camera/models.py
 
-    def save(self, *args, **kwargs):
-        if not self.face_id:
-            # Generate a unique face_id if not provided
-            max_id = TempFace.objects.filter(user=self.user).aggregate(models.Max('face_id'))['face_id__max']
-            if max_id:
-                num = int(max_id.split('_')[-1]) + 1
-            else:
-                num = 1
-            self.face_id = f"unknown_{num:03d}"
-        super().save(*args, **kwargs)
+#from django.db import models
+#from django.contrib.auth import get_user_model
+#from django.utils import timezone
+
+#User = get_user_model()
+
+class TempFace(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE , related_name='temp_faces',null=True, blank=True)
+    face_id = models.CharField(max_length=100)
+    image_data = models.BinaryField( null=True, blank=True)
+    last_seen = models.DateTimeField(default=timezone.now)
+    processed = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"TempFace {self.face_id} (ID: {self.id})"
+
+class SelectedFace(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='selected_faces',null=True, blank=True)
+    face_id = models.CharField(max_length=100)
+    image_data = models.BinaryField( null=True, blank=True)
+    quality_score = models.FloatField(default=0.0)
+    last_seen = models.DateTimeField(default=timezone.now)
+    timestamp = models.DateTimeField(default=timezone.now)
+    blur_score = models.FloatField(default=0.0)  # Add this line
+
+    class Meta:
+        unique_together = ('user', 'face_id')
+
+    def __str__(self):
+        return f"SelectedFace {self.face_id} (ID: {self.id})"
 
 
 class StaticCamera(models.Model):

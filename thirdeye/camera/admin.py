@@ -12,7 +12,7 @@ class DDNSCameraAdmin(admin.ModelAdmin):
 
 @admin.register(TempFace)
 class TempFaceAdmin(admin.ModelAdmin):
-    list_display = ('user', 'face_id','last_seen','image_path')
+    list_display = ('user', 'face_id','last_seen','image_data')
 
 
 
