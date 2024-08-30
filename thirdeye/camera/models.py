@@ -35,7 +35,7 @@ class SelectedFace(models.Model):
     date_seen = models.DateField(default=timezone.now)  # New field to store the date
 
     class Meta:
-        unique_together = ('user', 'face_id')
+        unique_together = ('user', 'face_id','date_seen')
 
     def __str__(self):
         return f"SelectedFace {self.face_id} (ID: {self.id})"

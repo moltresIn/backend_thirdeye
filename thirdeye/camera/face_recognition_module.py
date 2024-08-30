@@ -281,11 +281,11 @@ class FaceRecognitionProcessor:
       try:
           blur_score = self.detect_blur(cv2.imdecode(np.frombuffer(image_data, np.uint8), cv2.IMREAD_COLOR))
           date_seen = last_seen.date()  # Extract the date part of last_seen
-        
+    
           selected_face, created = await sync_to_async(SelectedFace.objects.update_or_create)(
               face_id=face_id,
               user=self.user,
-              date_seen=date_seen,  # Include the date_seen in the query
+              date_seen=date_seen,  # Ensures uniqueness is per day
               defaults={
                   'image_data': image_data,
                   'quality_score': quality_score,
