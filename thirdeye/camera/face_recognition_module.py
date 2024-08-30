@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 # Configuration parameters
 MAX_FACES_PER_ID = 15
 FACE_SAVE_INTERVAL = 7
-PROCESSING_INTERVAL = 60
+PROCESSING_INTERVAL = 1
 MAX_COSINE_DISTANCE = 0.3
 NN_BUDGET = 300
 TRACKER_MAX_AGE = 100
@@ -165,6 +165,7 @@ class FaceRecognitionProcessor:
             image_count = await sync_to_async(TempFace.objects.filter(face_id=face_id).count)()
             if image_count >= MAX_FACES_PER_ID:
                 logger.info(f"Max images reached for {face_id}")
+                await self.process_temp_faces()      
                 return None
 
             is_success, buffer = cv2.imencode(".jpg", face_img)
@@ -279,21 +280,25 @@ class FaceRecognitionProcessor:
     async def create_update_selected_face(self, face_id, image_data, quality_score, last_seen):
       try:
           blur_score = self.detect_blur(cv2.imdecode(np.frombuffer(image_data, np.uint8), cv2.IMREAD_COLOR))
+          date_seen = last_seen.date()  # Extract the date part of last_seen
+        
           selected_face, created = await sync_to_async(SelectedFace.objects.update_or_create)(
               face_id=face_id,
+              user=self.user,
+              date_seen=date_seen,  # Include the date_seen in the query
               defaults={
-                  'user':self.user,
                   'image_data': image_data,
                   'quality_score': quality_score,
-                  'blur_score': blur_score,  # Add this line
+                  'blur_score': blur_score,
                   'last_seen': last_seen,
                   'timestamp': timezone.now()
               }
           )
           action = "Created" if created else "Updated"
-          logger.info(f"{action} SelectedFace for {face_id}")
+          logger.info(f"{action} SelectedFace for {face_id} on {date_seen}")
       except Exception as e:
-          logger.error(f"Error creating/updating SelectedFace for {face_id}: {str(e)}", exc_info=True)
+          logger.error(f"Error creating/updating SelectedFace for {face_id} on {date_seen}: {str(e)}", exc_info=True)
+
 
     def detect_blur(self, image):
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)

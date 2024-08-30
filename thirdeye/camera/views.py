@@ -109,7 +109,6 @@ class GetStreamURLView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class FaceView(generics.ListAPIView):
-#class SelectedFaceView(generics.ListAPIView):
     serializer_class = SelectedFaceSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = DynamicPageSizePagination
@@ -117,12 +116,12 @@ class FaceView(generics.ListAPIView):
     def get_queryset(self):
         logger.info('SelectedFaceView.get_queryset: Building queryset for SelectedFace')
         queryset = SelectedFace.objects.filter(user=self.request.user).order_by('-last_seen')
-        
+
         logger.info(f'Initial queryset count: {queryset.count()}')
         logger.info(f'User: {self.request.user}')
 
         # Log all SelectedFace objects for this user
-        all_faces = list(queryset.values('id', 'last_seen'))
+        all_faces = list(queryset.values('id', 'last_seen', 'date_seen'))
         logger.info(f'All SelectedFace objects for user: {all_faces}')
 
         filters_applied = []
@@ -134,62 +133,62 @@ class FaceView(generics.ListAPIView):
                 # Parse the date string
                 local_tz = pytz.timezone('Asia/Kolkata')
                 date = datetime.strptime(date_str, '%Y-%m-%d').date()
-                
+
                 # Create a datetime range for the entire day in local time
                 start_datetime = local_tz.localize(datetime.combine(date, datetime.min.time()))
                 end_datetime = start_datetime + timedelta(days=1)
-                
+
                 # Convert to UTC for database query
                 start_datetime_utc = start_datetime.astimezone(pytz.UTC)
                 end_datetime_utc = end_datetime.astimezone(pytz.UTC)
-                
+
                 logger.info(f'Filtering by date range (local): {start_datetime} to {end_datetime}')
                 logger.info(f'Filtering by date range (UTC): {start_datetime_utc} to {end_datetime_utc}')
-                
+
                 # Apply the filter
                 queryset = queryset.filter(last_seen__gte=start_datetime_utc, last_seen__lt=end_datetime_utc)
                 filters_applied.append(f'date={date}')
-                
+
                 logger.info(f'Queryset count after date filter: {queryset.count()}')
-                
+
                 # Log the SQL query
                 logger.info(f'SQL query: {queryset.query}')
-                
+
                 # Log all SelectedFace objects after filter
-                filtered_faces = list(queryset.values('id', 'last_seen'))
+                filtered_faces = list(queryset.values('id', 'last_seen', 'date_seen'))
                 logger.info(f'SelectedFace objects after filter: {filtered_faces}')
-                
+
             except ValueError:
                 logger.error(f'SelectedFaceView.get_queryset: Invalid date format: {date_str}')
                 return queryset.none()
 
         logger.info(f'SelectedFaceView.get_queryset: Applied filters: {", ".join(filters_applied)}')
         logger.info(f'SelectedFaceView.get_queryset: Returning queryset with {queryset.count()} items')
-        
+
         return queryset
 
     def list(self, request, *args, **kwargs):
         logger.info('SelectedFaceView.list: Received list request')
         try:
             queryset = self.get_queryset()
-        
+
             logger.info(f'Queryset count before pagination: {queryset.count()}')
-        
+
             page = self.paginate_queryset(queryset)
-        
+
             if page is not None:
                 logger.info(f'Page count: {len(page)}')
                 serializer = self.get_serializer(page, many=True, context={'request': request})
                 response = self.get_paginated_response(serializer.data)
-            
+
                 # Log pagination details
                 current_page = self.paginator.page.number
                 page_size = self.paginator.page_size
                 total_pages = self.paginator.page.paginator.num_pages
                 logger.info(f'SelectedFaceView.list: Returning page {current_page} of {total_pages} (page size: {page_size})')
-            
+
                 return response
-        
+
             logger.warning('SelectedFaceView.list: Pagination not applied, returning all data')
             serializer = self.get_serializer(queryset, many=True, context={'request': request})
             return Response(serializer.data)

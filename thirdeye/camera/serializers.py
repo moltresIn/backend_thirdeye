@@ -36,7 +36,7 @@ class SelectedFaceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SelectedFace
-        fields = ['id', 'user', 'face_id', 'image', 'quality_score', 'last_seen', 'timestamp']
+        fields = ['id', 'user', 'face_id', 'image', 'quality_score', 'last_seen', 'timestamp','date_seen']
 
     def get_image(self, obj):
         if obj.image_data:

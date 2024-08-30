@@ -31,7 +31,8 @@ class SelectedFace(models.Model):
     quality_score = models.FloatField(default=0.0)
     last_seen = models.DateTimeField(default=timezone.now)
     timestamp = models.DateTimeField(default=timezone.now)
-    blur_score = models.FloatField(default=0.0)  # Add this line
+    blur_score = models.FloatField(default=0.0)  
+    date_seen = models.DateField(default=timezone.now)  # New field to store the date
 
     class Meta:
         unique_together = ('user', 'face_id')
