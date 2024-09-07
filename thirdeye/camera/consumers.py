@@ -92,6 +92,8 @@ class CameraConsumer(AsyncWebsocketConsumer):
 
                     processed_frame, detected_faces = await self.face_processor.process_frame(frame)
 
+
+
                     _, buffer = cv2.imencode('.jpg', processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
                     base64_frame = base64.b64encode(buffer).decode('utf-8')
 

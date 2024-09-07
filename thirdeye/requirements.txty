@@ -18,6 +18,5 @@ django-notifications-hq
 mysqlclient
 deep_sort_realtime
 asgiref
-faiss-cpu>=1.7.2
-
-faiss-gpu @ git+https://github.com/facebookresearch/faiss.git@v1.7.2#egg=faiss-gpu
+faiss-cpu
+faiss-gpu

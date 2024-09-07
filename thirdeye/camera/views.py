@@ -1,12 +1,13 @@
 # camera/views.py
+# camera/views.py
 from rest_framework import status, generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .models import StaticCamera, DDNSCamera, CameraStream, SelectedFace,TempFace
+from .models import StaticCamera, DDNSCamera, CameraStream, SelectedFace, TempFace, FaceAnalytics
 from .serializers import (
     StaticCameraSerializer, DDNSCameraSerializer, CameraStreamSerializer, 
-    SelectedFaceSerializer, TempFaceSerializer
+    SelectedFaceSerializer, TempFaceSerializer, FaceAnalyticsSerializer
 )
 from .pagination import DynamicPageSizePagination
 from django.db.models import Q
@@ -18,6 +19,9 @@ from django.utils import timezone
 from datetime import datetime, timedelta
 import pytz
 import logging
+from .face_recognition_module import FaceRecognitionProcessor
+from asgiref.sync import async_to_sync
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
@@ -114,117 +118,119 @@ class FaceView(generics.ListAPIView):
     pagination_class = DynamicPageSizePagination
 
     def get_queryset(self):
-        logger.info('SelectedFaceView.get_queryset: Building queryset for SelectedFace')
+        logger.info('FaceView.get_queryset: Building queryset for SelectedFace')
         queryset = SelectedFace.objects.filter(user=self.request.user).order_by('-last_seen')
-
-        logger.info(f'Initial queryset count: {queryset.count()}')
-        logger.info(f'User: {self.request.user}')
-
-        # Log all SelectedFace objects for this user
-        all_faces = list(queryset.values('id', 'last_seen', 'date_seen'))
-        logger.info(f'All SelectedFace objects for user: {all_faces}')
-
+        
         filters_applied = []
 
         date_str = self.request.query_params.get('date')
+        is_known = self.request.query_params.get('is_known')
 
         if date_str:
             try:
-                # Parse the date string
                 local_tz = pytz.timezone('Asia/Kolkata')
                 date = datetime.strptime(date_str, '%Y-%m-%d').date()
-
-                # Create a datetime range for the entire day in local time
                 start_datetime = local_tz.localize(datetime.combine(date, datetime.min.time()))
                 end_datetime = start_datetime + timedelta(days=1)
-
-                # Convert to UTC for database query
                 start_datetime_utc = start_datetime.astimezone(pytz.UTC)
                 end_datetime_utc = end_datetime.astimezone(pytz.UTC)
-
-                logger.info(f'Filtering by date range (local): {start_datetime} to {end_datetime}')
-                logger.info(f'Filtering by date range (UTC): {start_datetime_utc} to {end_datetime_utc}')
-
-                # Apply the filter
+                
                 queryset = queryset.filter(last_seen__gte=start_datetime_utc, last_seen__lt=end_datetime_utc)
                 filters_applied.append(f'date={date}')
-
-                logger.info(f'Queryset count after date filter: {queryset.count()}')
-
-                # Log the SQL query
-                logger.info(f'SQL query: {queryset.query}')
-
-                # Log all SelectedFace objects after filter
-                filtered_faces = list(queryset.values('id', 'last_seen', 'date_seen'))
-                logger.info(f'SelectedFace objects after filter: {filtered_faces}')
-
             except ValueError:
-                logger.error(f'SelectedFaceView.get_queryset: Invalid date format: {date_str}')
+                logger.error(f'FaceView.get_queryset: Invalid date format: {date_str}')
                 return queryset.none()
 
-        logger.info(f'SelectedFaceView.get_queryset: Applied filters: {", ".join(filters_applied)}')
-        logger.info(f'SelectedFaceView.get_queryset: Returning queryset with {queryset.count()} items')
+        if is_known is not None:
+            is_known = is_known.lower() == 'true'
+            queryset = queryset.filter(is_known=is_known)
+            filters_applied.append(f'is_known={is_known}')
 
+        logger.info(f'FaceView.get_queryset: Applied filters: {", ".join(filters_applied)}')
+        logger.info(f'FaceView.get_queryset: Returning queryset with {queryset.count()} items')
+        
         return queryset
 
-    def list(self, request, *args, **kwargs):
-        logger.info('SelectedFaceView.list: Received list request')
-        try:
-            queryset = self.get_queryset()
-
-            logger.info(f'Queryset count before pagination: {queryset.count()}')
-
-            page = self.paginate_queryset(queryset)
-
-            if page is not None:
-                logger.info(f'Page count: {len(page)}')
-                serializer = self.get_serializer(page, many=True, context={'request': request})
-                response = self.get_paginated_response(serializer.data)
-
-                # Log pagination details
-                current_page = self.paginator.page.number
-                page_size = self.paginator.page_size
-                total_pages = self.paginator.page.paginator.num_pages
-                logger.info(f'SelectedFaceView.list: Returning page {current_page} of {total_pages} (page size: {page_size})')
-
-                return response
-
-            logger.warning('SelectedFaceView.list: Pagination not applied, returning all data')
-            serializer = self.get_serializer(queryset, many=True, context={'request': request})
-            return Response(serializer.data)
-        except Exception as e:
-            logger.error(f'Error in SelectedFaceView.list: {str(e)}', exc_info=True)
-            raise
-    
-
-
-class RenameFaceView(generics.UpdateAPIView):
-    queryset = SelectedFace.objects.all()
-    serializer_class = SelectedFaceSerializer
+class RenameFaceView(APIView):
     permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
-        request_body=SelectedFaceSerializer,
-        responses={200: SelectedFaceSerializer()},
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'old_face_id': openapi.Schema(type=openapi.TYPE_STRING),
+                'new_face_id': openapi.Schema(type=openapi.TYPE_STRING),
+            },
+            required=['old_face_id', 'new_face_id']
+        ),
+        responses={200: openapi.Response('Face renamed successfully')}
     )
-    def get_object(self):
-        logger.info(f'RenameFaceView.get_object: Getting SelectedFace object with pk: {self.kwargs["pk"]}')
-        obj = get_object_or_404(SelectedFace, pk=self.kwargs['pk'], user=self.request.user)
-        logger.info(f'RenameFaceView.get_object: Found SelectedFace object: {obj}')
-        return obj
+    def post(self, request):
+        old_face_id = request.data.get('old_face_id')
+        new_face_id = request.data.get('new_face_id')
 
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop('partial', False)
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
-        logger.info(f'RenameFaceView.update: Updated SelectedFace {instance.id} with new name: {instance.face_id}')
-        return Response(serializer.data)
+        if not old_face_id or not new_face_id:
+            return Response({"error": "Both old_face_id and new_face_id are required"}, status=400)
+
+        # Initialize the processor
+        face_processor = FaceRecognitionProcessor(user=request.user)
+
+        # Since rename_face is an async method, we need to convert it to sync using async_to_sync
+        async_to_sync(face_processor.rename_face)(old_face_id, new_face_id)
+
+        return Response({"message": "Face renamed successfully"}, status=200)
+
+
+
+class FaceAnalyticsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            face_processor = FaceRecognitionProcessor(user=request.user)
+            analytics = face_processor.get_face_analytics()
+
+            if analytics:
+                with transaction.atomic():
+                    try:
+                        # Try to get existing entry for today
+                        face_analytics = FaceAnalytics.objects.get(
+                            user=request.user,
+                            date=analytics['date']
+                        )
+                        # Update existing entry
+                        for key, value in analytics.items():
+                            setattr(face_analytics, key, value)
+                        face_analytics.save()
+                    except FaceAnalytics.DoesNotExist:
+                        # Create new entry if it doesn't exist
+                        face_analytics = FaceAnalytics.objects.create(
+                            user=request.user,
+                            date=analytics['date'],
+                            total_faces=analytics['total_faces'],
+                            known_faces=analytics['known_faces'],
+                            unknown_faces=analytics['unknown_faces'],
+                            known_faces_today=analytics['known_faces_today'],
+                            known_faces_week=analytics['known_faces_week'],
+                            known_faces_month=analytics['known_faces_month'],
+                            known_faces_year=analytics['known_faces_year'],
+                            known_faces_all=analytics['known_faces_all'],
+                            face_counts=analytics['face_counts'],
+                            timestamp=analytics['timestamp']
+                        )
+
+                serializer = FaceAnalyticsSerializer(face_analytics)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            else:
+                return Response({"error": "Failed to retrieve face analytics"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception as e:
+            logger.error(f"Error in FaceAnalyticsView: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 
 class RenameCameraView(APIView):
     permission_classes = [IsAuthenticated]
-
     @swagger_auto_schema(
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,

@@ -2,14 +2,14 @@
 # camera/serializers.py
 
 from rest_framework import serializers
-from .models import StaticCamera, DDNSCamera, CameraStream, TempFace,SelectedFace
+#from .models import StaticCamera, DDNSCamera, CameraStream, TempFace,SelectedFace
 from django.utils import timezone
 import base64
 
 #from rest_framework import serializers
-#from .models import TempFace, SelectedFace
-#import base64
+from .models import StaticCamera, DDNSCamera, CameraStream, TempFace, SelectedFace, FaceAnalytics
 #from django.utils import timezone
+#import base64
 
 class TempFaceSerializer(serializers.ModelSerializer):
     last_seen = serializers.SerializerMethodField()
@@ -17,7 +17,7 @@ class TempFaceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TempFace
-        fields = ['id', 'user', 'face_id', 'image', 'last_seen']
+        fields = ['id', 'user', 'face_id', 'image', 'last_seen', 'processed']
 
     def get_last_seen(self, obj):
         if obj.last_seen:
@@ -36,7 +36,7 @@ class SelectedFaceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SelectedFace
-        fields = ['id', 'user', 'face_id', 'image', 'quality_score', 'last_seen', 'timestamp','date_seen']
+        fields = ['id', 'user', 'face_id', 'image', 'quality_score', 'last_seen', 'timestamp', 'blur_score', 'is_known', 'date_seen']
 
     def get_image(self, obj):
         if obj.image_data:
@@ -48,7 +48,6 @@ class SelectedFaceSerializer(serializers.ModelSerializer):
             local_time = timezone.localtime(obj.last_seen)
             return local_time.strftime('%I:%M %p')
         return None
-
 
 class StaticCameraSerializer(serializers.ModelSerializer):
     class Meta:
@@ -64,3 +63,9 @@ class CameraStreamSerializer(serializers.ModelSerializer):
     class Meta:
         model = CameraStream
         fields = ['stream_url']
+
+class FaceAnalyticsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FaceAnalytics
+        fields = ['date', 'total_faces', 'known_faces', 'unknown_faces', 'face_counts', 'timestamp',
+                  'known_faces_today', 'known_faces_week', 'known_faces_month', 'known_faces_year', 'known_faces_all']
