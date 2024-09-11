@@ -93,3 +93,15 @@ class FaceAnalytics(models.Model):
 
     def __str__(self):
         return f"FaceAnalytics for {self.user.username} on {self.date}"
+
+
+class NotificationLog(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    face_id = models.CharField(max_length=100)
+    camera_name = models.CharField(max_length=255)
+    detected_time = models.DateTimeField(default=timezone.now)
+    notification_sent = models.BooleanField(default=False)
+    image_data = models.BinaryField(null=True, blank=True)
+
+    def __str__(self):
+        return f"NotificationLog for {self.face_id} at {self.detected_time}"

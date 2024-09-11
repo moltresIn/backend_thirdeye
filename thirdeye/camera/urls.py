@@ -1,6 +1,7 @@
 #camera/urls.py
 from django.urls import path
-from .views import StaticCameraView, DDNSCameraView, GetStreamURLView, FaceView, RenameFaceView, RenameCameraView,FaceAnalyticsView
+from .views import StaticCameraView, DDNSCameraView, GetStreamURLView, FaceView, RenameFaceView, RenameCameraView,FaceAnalyticsView,NotificationLogView
+
 
 urlpatterns = [
     path('static-camera/', StaticCameraView.as_view(), name='static_camera'),
@@ -10,4 +11,7 @@ urlpatterns = [
     path('rename-face/', RenameFaceView.as_view(), name='rename_face'),
     path('rename-camera/<str:camera_type>/<int:pk>/', RenameCameraView.as_view(), name='rename_camera'),
     path('face-analytics/', FaceAnalyticsView.as_view(), name='face_analytics'),  # New path for FaceAnalyticsView
+    path('notifications/', NotificationLogView.as_view(), name='notification-log'),
+
+
 ]

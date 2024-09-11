@@ -4,10 +4,10 @@ from rest_framework import status, generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .models import StaticCamera, DDNSCamera, CameraStream, SelectedFace, TempFace, FaceAnalytics
+from .models import StaticCamera, DDNSCamera, CameraStream, SelectedFace, TempFace, FaceAnalytics,NotificationLog
 from .serializers import (
     StaticCameraSerializer, DDNSCameraSerializer, CameraStreamSerializer, 
-    SelectedFaceSerializer, TempFaceSerializer, FaceAnalyticsSerializer
+    SelectedFaceSerializer, TempFaceSerializer, FaceAnalyticsSerializer,NotificationLogSerializer
 )
 from .pagination import DynamicPageSizePagination
 from django.db.models import Q
@@ -267,3 +267,14 @@ class RenameCameraView(APIView):
         cache.delete(f"stream_urls_{camera_type}_{request.user.id}")
 
         return Response({"message": "Camera renamed successfully"}, status=status.HTTP_200_OK)
+
+
+
+
+class NotificationLogView(generics.ListAPIView):
+    queryset = NotificationLog.objects.all()
+    serializer_class = NotificationLogSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return NotificationLog.objects.filter(user=self.request.user).order_by('-detected_time')

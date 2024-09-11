@@ -7,7 +7,7 @@ from django.utils import timezone
 import base64
 
 #from rest_framework import serializers
-from .models import StaticCamera, DDNSCamera, CameraStream, TempFace, SelectedFace, FaceAnalytics
+from .models import StaticCamera, DDNSCamera, CameraStream, TempFace, SelectedFace, FaceAnalytics,NotificationLog
 #from django.utils import timezone
 #import base64
 
@@ -69,3 +69,9 @@ class FaceAnalyticsSerializer(serializers.ModelSerializer):
         model = FaceAnalytics
         fields = ['date', 'total_faces', 'known_faces', 'unknown_faces', 'face_counts', 'timestamp',
                   'known_faces_today', 'known_faces_week', 'known_faces_month', 'known_faces_year', 'known_faces_all']
+
+
+class NotificationLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationLog
+        fields = ['user', 'face_id', 'camera_name', 'detected_time', 'notification_sent', 'image_data']
