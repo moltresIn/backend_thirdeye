@@ -187,7 +187,10 @@ class FaceAnalyticsView(APIView):
 
     def get(self, request):
         try:
+            # Initialize the face analytics processor with the authenticated user
             face_processor = FaceRecognitionProcessor(user=request.user)
+            
+            # Get the analytics data
             analytics = face_processor.get_face_analytics()
 
             if analytics:
@@ -203,22 +206,21 @@ class FaceAnalyticsView(APIView):
                             setattr(face_analytics, key, value)
                         face_analytics.save()
                     except FaceAnalytics.DoesNotExist:
-                        # Create new entry if it doesn't exist
+                        # Create a new entry if it doesn't exist
                         face_analytics = FaceAnalytics.objects.create(
                             user=request.user,
                             date=analytics['date'],
                             total_faces=analytics['total_faces'],
-                            known_faces=analytics['known_faces'],
-                            unknown_faces=analytics['unknown_faces'],
                             known_faces_today=analytics['known_faces_today'],
                             known_faces_week=analytics['known_faces_week'],
                             known_faces_month=analytics['known_faces_month'],
                             known_faces_year=analytics['known_faces_year'],
-                            known_faces_all=analytics['known_faces_all'],
+                            known_faces_all=analytics['known_faces_all'],  # Use the correct key here
+                            unknown_faces=analytics['unknown_faces'],
                             face_counts=analytics['face_counts'],
-                            timestamp=analytics['timestamp']
                         )
 
+                # Serialize the response and return the data
                 serializer = FaceAnalyticsSerializer(face_analytics)
                 return Response(serializer.data, status=status.HTTP_200_OK)
             else:
@@ -226,6 +228,7 @@ class FaceAnalyticsView(APIView):
         except Exception as e:
             logger.error(f"Error in FaceAnalyticsView: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 

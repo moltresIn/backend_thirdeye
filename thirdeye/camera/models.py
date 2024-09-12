@@ -105,4 +105,4 @@ class NotificationLog(models.Model):
     image_data = models.BinaryField(null=True, blank=True)
 
     def __str__(self):
-        return f"NotificationLog for {self.face_id} at {self.detected_time}"
+        return f"NotificationLog for {self.face_id} "

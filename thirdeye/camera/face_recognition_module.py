@@ -365,6 +365,7 @@ class FaceRecognitionProcessor:
     async def create_update_selected_face(self, face_id, image_data, embedding, quality_score, last_seen):
         # Create or update SelectedFace entry
         try:
+            logger.info(f"Sending face for last_seen {last_seen}...")
             selected_faces = await sync_to_async(list)(
                 SelectedFace.objects.filter(user=self.user, face_id=face_id)
             )
@@ -386,13 +387,16 @@ class FaceRecognitionProcessor:
                     quality_score=quality_score,
                     last_seen=last_seen,
                 )
+                logger.info(f"Sending face for last_seen {selected_face.last_seen}...")
                 await sync_to_async(new_face.save)()
 
             
             logger.info(f"Face {face_id} processed and saved")
         except Exception as e:
             logger.error(f"Error updating/creating face {face_id}: {str(e)}")
-        # Send notification for the new face
+ 
+       # Send notification for the new face
+        logger.info(f"Sending notification for last_seen {selected_face.last_seen}...")
         await self.send_notification(face_id, last_seen, image_data)
 
 
@@ -405,7 +409,7 @@ class FaceRecognitionProcessor:
       """
       try:
           logger.info(f"Sending notification for face_id {face_id}...")
-
+          logger.info(f"Sending notification for last_seen {last_seen}...")
           # If the data is binary (bytes), encode it in base64 for WebSocket communication
           if isinstance(encoded_image_data, bytes):
               encoded_image_data = base64.b64encode(encoded_image_data).decode('utf-8')
@@ -429,7 +433,7 @@ class FaceRecognitionProcessor:
                   {
                       'type': 'send_notification',
                       'message': notification_data
-                  } 
+                  }
               )
           else:
               logger.error(f"WebSocket connection closed. Unable to send notification for face_id {face_id}.")
@@ -449,9 +453,12 @@ class FaceRecognitionProcessor:
           )
 
           logger.info(f"Notification sent for face_id {face_id}")
-
+          logger.info(f"Notification sent for last_seen {last_seen}")
       except Exception as e:
           logger.error(f"Error sending notification for face_id {face_id}: {str(e)}", exc_info=True)
+
+
+    
 
     async def rename_face(self, old_face_id, new_face_id):
         try:
@@ -476,51 +483,60 @@ class FaceRecognitionProcessor:
             logger.error(f"Error renaming face_id: {str(e)}", exc_info=True)
 
     def get_face_analytics(self):
-        try:
-            logger.info("Calculating face analytics...")
-            today = timezone.now().date()
-            
-            # Calculate analytics for different time periods
-            periods = {
-                'today': (today, today + timedelta(days=1)),
-                'week': (today - timedelta(days=7), today + timedelta(days=1)),
-                'month': (today - timedelta(days=30), today + timedelta(days=1)),
-                'year': (today - timedelta(days=365), today + timedelta(days=1)),
-                'all': (None, None)
-            }
+      try:
+          logger.info("Calculating face analytics...")
+          today = timezone.now().date()
 
-            analytics = {}
-            for period, (start_date, end_date) in periods.items():
-                query = Q(user=self.user, is_known=True)
-                if start_date and end_date:
-                    query &= Q(last_seen__range=(start_date, end_date))
+          # Define time periods for analytics
+          periods = {
+              'today': (today, today + timedelta(days=1)),
+              'week': (today - timedelta(days=7), today + timedelta(days=1)),
+              'month': (today - timedelta(days=30), today + timedelta(days=1)),
+              'year': (today - timedelta(days=365), today + timedelta(days=1)),
+              'all': (None, None)  # For all-time data
+          }
 
-                known_faces = SelectedFace.objects.filter(query).count()
-                analytics[f'known_faces_{period}'] = known_faces
+          analytics = {}
+          for period, (start_date, end_date) in periods.items():
+              # Base query for known faces
+              query = Q(user=self.user, is_known=True)
+              
+              # If there's a specific start and end date, apply range filtering
+              if start_date and end_date:
+                  query &= Q(last_seen__range=(start_date, end_date))
+ 
+              # Count known faces for the given time period
+              known_faces = SelectedFace.objects.filter(query).count()
+              analytics[f'known_faces_{period}'] = known_faces
+ 
+          # Calculate total faces (all time)
+          total_faces = SelectedFace.objects.filter(user=self.user).count()
+ 
+          # Calculate unknown faces (all time)
+          unknown_faces = SelectedFace.objects.filter(user=self.user, is_known=False).count()
+  
+          # Get the most common face IDs (all time)
+          face_counts = (
+              SelectedFace.objects.filter(user=self.user)
+              .values('face_id')
+              .annotate(count=Count('id'))
+              .order_by('-count')
+          )
 
-            # Total number of faces (all time)
-            total_faces = SelectedFace.objects.filter(user=self.user).count()
-            
-            # Number of unknown faces (all time)
-            unknown_faces = SelectedFace.objects.filter(user=self.user, is_known=False).count()
+          # Update analytics dictionary with total and unknown face data
+          analytics.update({
+              'total_faces': total_faces,
+              'unknown_faces': unknown_faces,
+              'known_faces':known_faces,
+              'face_counts': list(face_counts),  # List of face ID counts
+              'date': today.isoformat()  # Include today's date for reference
+          })
+ 
+          logger.info(f"Face analytics calculated: {analytics}")
+          return analytics  # Return the full analytics dictionary
 
-            # Most common face IDs (all time)
-            face_counts = (
-                SelectedFace.objects.filter(user=self.user)
-                .values('face_id')
-                .annotate(count=Count('id'))
-                .order_by('-count')
-            )
+      except Exception as e:
+          # Catch exceptions and log the error
+          logger.error(f"Error getting face analytics: {str(e)}")
+          return None  # Return None in case of an error
 
-            analytics.update({
-                'total_faces': total_faces,
-                'unknown_faces': unknown_faces,
-                'face_counts': list(face_counts),
-                'date': today.isoformat()
-            })
-
-            logger.info(f"Face analytics calculated: {analytics}")
-            return analytics
-        except Exception as e:
-            logger.error(f"Error getting face analytics: {str(e)}")
-            return None
