@@ -20,6 +20,7 @@ class TempFace(models.Model):
     last_seen = models.DateTimeField(default=timezone.now)
     processed = models.BooleanField(default=False)
     date_seen = models.DateField(default=timezone.now)  # Store the date of the last seen
+    quality_score = models.FloatField(default=0.0)
 
     def __str__(self):
         return f"TempFace {self.face_id} (ID: {self.id})"
