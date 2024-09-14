@@ -1,7 +1,5 @@
 # camera/face_recognition.py
 
-# camera/face_recognition.py
-
 import base64
 import cv2
 import numpy as np
@@ -17,12 +15,12 @@ from ultralytics import YOLO
 from django.utils import timezone
 from django.conf import settings
 from asgiref.sync import sync_to_async
-from .models import TempFace, SelectedFace, NotificationLog
+from .models import TempFace, SelectedFace, NotificationLog,FaceVisit
 import face_recognition
 from django.db.models import Count, Q
 from channels.layers import get_channel_layer
 import pytz 
-# Set up logging
+
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
@@ -78,76 +76,79 @@ class FaceRecognitionProcessor:
         return await self.process_frame_from_buffer()
 
     async def process_frame_from_buffer(self):
-        frame = await self.frame_buffer.get()
+      frame = await self.frame_buffer.get()
 
-        # Step 1: Detect multiple faces in the frame
-        faces = self.detect_faces(frame)
-        logger.debug(f"Detected {len(faces)} faces in the frame")
+      # Step 1: Detect multiple faces in the frame
+      faces = self.detect_faces(frame)
+      logger.debug(f"Detected {len(faces)} faces in the frame")
 
-        # Step 2: Create detection objects for each detected face
-        detections = [Detection(face[:4], face[4], self.generate_feature(face, frame)) for face in faces]
-        logger.debug(f"Created {len(detections)} detections for the tracker")
+      # Step 2: Create detection objects for each detected face
+      detections = [Detection(face[:4], face[4], self.generate_feature(face, frame)) for face in faces]
+      logger.debug(f"Created {len(detections)} detections for the tracker")
 
-        # Step 3: Use the tracker to update face positions
-        self.tracker.predict()
-        self.tracker.update(detections)
-        logger.debug(f"Tracker updated with {len(self.tracker.tracks)} tracks")
+      # Step 3: Use the tracker to update face positions
+      self.tracker.predict()
+      self.tracker.update(detections)
+      logger.debug(f"Tracker updated with {len(self.tracker.tracks)} tracks")
 
-        detected_faces = []
-        for track in self.tracker.tracks:
-            # Check if the face is confirmed and still being tracked
-            if not track.is_confirmed() or track.time_since_update > 1:
-                continue
+      detected_faces = []
+      for track in self.tracker.tracks:
+          # Check if the face is confirmed and still being tracked
+          if not track.is_confirmed() or track.time_since_update > 1:
+              continue
 
-            # Face bounding box
-            bbox = track.to_tlbr()
+          # Face bounding box
+          bbox = track.to_tlbr()
+ 
+          # Track ID used to uniquely identify the face
+          track_id = track.track_id
+ 
+          # Check if this is a new face entering the frame (not already processed)
+          if track_id not in self.in_frame_tracker:
+              # Process and store this face on entry
+              temp_face = await self.save_face_image(frame, track)
+ 
+              if temp_face is None:
+                  continue
 
-            # Track ID used to uniquely identify the face
-            track_id = track.track_id
+              # Mark the face as currently in the frame and processed
+              self.in_frame_tracker[track_id] = True
+ 
+              # Convert `last_seen` to Indian Standard Time (IST)
+              last_seen_ist = temp_face.last_seen.astimezone(IST)
+ 
+              # Format the `last_seen` to a readable format (12-hour with AM/PM)
+              formatted_last_seen = last_seen_ist.strftime('%I:%M %p')
+ 
+              detected_faces.append({
+                  'id': temp_face.id,
+                  'face_id': temp_face.face_id,
+                  'last_seen': formatted_last_seen,  # Return the formatted IST time,
+                  'image_data': temp_face.image_data,
+                  'coordinates': {
+                      'left': bbox[0],
+                      'top': bbox[1],
+                      'right': bbox[2],
+                      'bottom': bbox[3]
+                  }
+              })
+              logger.debug(f"Stored new face: {temp_face.face_id}")
 
-            # Check if this is a new face entering the frame
-            if track_id not in self.in_frame_tracker:
-                # Process and store this face on entry
-                temp_face = await self.save_face_image(frame, track)
+      # Remove any face that is no longer in the frame (based on tracker status)
+      self.cleanup_exited_faces()
 
-                if temp_face is None:
-                    continue
+      return frame, detected_faces
 
-                # Mark the face as currently in the frame
-                self.in_frame_tracker[track_id] = True
-
-                # Convert `last_seen` to Indian Standard Time (IST)
-                last_seen_ist = temp_face.last_seen.astimezone(IST)
-
-                # Format the `last_seen` to a readable format (12-hour with AM/PM)
-                formatted_last_seen = last_seen_ist.strftime('%I:%M %p')
-
-                detected_faces.append({
-                    'id': temp_face.id,
-                    'face_id': temp_face.face_id,
-                    'last_seen': formatted_last_seen,  # Return the formatted IST time,
-                    'image_data': temp_face.image_data,
-                    'coordinates': {
-                        'left': bbox[0],
-                        'top': bbox[1],
-                        'right': bbox[2],
-                        'bottom': bbox[3]
-                    }
-                })
-                logger.debug(f"Stored new face: {temp_face.face_id}")
-
-        # Remove any face that is no longer in the frame (based on tracker status)
-        self.cleanup_exited_faces()
-
-        return frame, detected_faces
 
     def cleanup_exited_faces(self):
-        # Remove tracks for faces that have left the frame
-        for track in self.tracker.tracks:
-            if track.time_since_update > 1 and track.track_id in self.in_frame_tracker:
-                # Mark the face as having exited the frame
-                logger.debug(f"Face {track.track_id} has exited the frame")
-                del self.in_frame_tracker[track.track_id]
+      # Remove tracks for faces that have left the frame
+      for track in self.tracker.tracks:
+          if track.time_since_update > 1 and track.track_id in self.in_frame_tracker:
+              # Mark the face as having exited the frame
+              logger.debug(f"Face {track.track_id} has exited the frame")
+              del self.in_frame_tracker[track.track_id]
+
+
     def generate_feature(self, face, frame):
         """
         Generate a feature vector from the detected face region, used for tracking.
@@ -176,52 +177,53 @@ class FaceRecognitionProcessor:
         return None
 
     async def save_face_image(self, frame, track):
-        track_id = int(track.track_id)
+      track_id = int(track.track_id)
 
-        # Only store face if it's not already in the frame
-        if track_id in self.in_frame_tracker:
-            return None  # Skip processing if the face is already in the frame
+      # Only store face if it's not already in the frame
+      if track_id in self.in_frame_tracker:
+          return None  # Skip processing if the face is already in the frame
 
-        if track_id not in self.face_id_mapping:
-            self.face_id_mapping[track_id] = self.get_next_face_id()
-            self.frame_save_counter[track_id] = 0
+      if track_id not in self.face_id_mapping:
+          self.face_id_mapping[track_id] = self.get_next_face_id()
+          self.frame_save_counter[track_id] = 0
 
-        self.frame_save_counter[track_id] += 1
+      self.frame_save_counter[track_id] += 1
 
-        if self.frame_save_counter[track_id] % FACE_SAVE_INTERVAL != 0:
-            return None
+      if self.frame_save_counter[track_id] % FACE_SAVE_INTERVAL != 0:
+          return None
 
-        face_id = self.face_id_mapping[track_id]
-        bbox = track.to_tlbr()
-        h, w = frame.shape[:2]
-        pad_w, pad_h = 0.2 * (bbox[2] - bbox[0]), 0.2 * (bbox[3] - bbox[1])
-        x1, y1 = max(0, int(bbox[0] - pad_w)), max(0, int(bbox[1] - pad_h))
-        x2, y2 = min(w, int(bbox[2] + pad_w)), min(h, int(bbox[3] + pad_h))
+      face_id = self.face_id_mapping[track_id]
+      bbox = track.to_tlbr()
+      h, w = frame.shape[:2]
+      pad_w, pad_h = 0.2 * (bbox[2] - bbox[0]), 0.2 * (bbox[3] - bbox[1])
+      x1, y1 = max(0, int(bbox[0] - pad_w)), max(0, int(bbox[1] - pad_h))
+      x2, y2 = min(w, int(bbox[2] + pad_w)), min(h, int(bbox[3] + pad_h))
 
-        face_img = frame[y1:y2, x1:x2]
-        if face_img.size > 0:
-            embedding = self.generate_face_embedding(face_img)
-            if embedding is not None:
-                embedding = embedding.tolist()  # Convert numpy array to list for storage
-                try:
-                    # Encode the face image as a byte array
-                    face_img = cv2.imencode('.jpg', face_img)[1].tobytes()
+      face_img = frame[y1:y2, x1:x2]
+      if face_img.size > 0:
+          embedding = self.generate_face_embedding(face_img)
+          if embedding is not None:
+              embedding = embedding.tolist()  # Convert numpy array to list for storage
+              try:
+                  # Encode the face image as a byte array
+                  face_img = cv2.imencode('.jpg', face_img)[1].tobytes()
 
-                    # Store face in TempFace model for later processing
-                    temp_face = await sync_to_async(TempFace.objects.create)(
-                        user=self.user,
-                        face_id=face_id,
-                        image_data=face_img,
-                        embedding=embedding,
-                        last_seen=timezone.now(),
-                        processed=False
-                    )
-                    logger.info(f"Temporary face {face_id} saved to TempFace model")
-                    return temp_face
-                except Exception as e:
-                    logger.error(f"Error saving TempFace {face_id}: {str(e)}", exc_info=True)
-                    return None
-        return None
+                  # Store face in TempFace model for later processing
+                  temp_face = await sync_to_async(TempFace.objects.create)(
+                      user=self.user,
+                      face_id=face_id,
+                      image_data=face_img,
+                      embedding=embedding,
+                      last_seen=timezone.now(),
+                      processed=False
+                  )
+                  logger.info(f"Temporary face {face_id} saved to TempFace model")
+                  return temp_face
+              except Exception as e:
+                  logger.error(f"Error saving TempFace {face_id}: {str(e)}", exc_info=True)
+                  return None
+      return None
+
 
     def get_next_face_id(self):
         if self.available_face_ids:
@@ -284,49 +286,63 @@ class FaceRecognitionProcessor:
             await self.process_face_group(face_group)
 
     async def process_face_group(self, face_group):
-        if not face_group:
-            return
+      if not face_group:
+          return
 
-        face_id = face_group[0].face_id
-        logger.info(f"Processing face group for face_id: {face_id}")
+      face_id = face_group[0].face_id
+      logger.info(f"Processing face group for face_id: {face_id}")
 
-        best_image, best_quality_score, best_embedding = None, -float('inf'), None
-        last_seen = face_group[0].last_seen
+      best_image, best_quality_score, best_embedding = None, -float('inf'), None
+      last_seen = face_group[0].last_seen
 
-        for face in face_group:
-            image_data = await sync_to_async(lambda: face.image_data)()
-            embedding = await sync_to_async(lambda: face.embedding)()
-            if image_data and embedding:
-                image = cv2.imdecode(np.frombuffer(image_data, np.uint8), cv2.IMREAD_COLOR)
+      # Find the best quality face in the group
+      for face in face_group:
+          image_data = await sync_to_async(lambda: face.image_data)()
+          embedding = await sync_to_async(lambda: face.embedding)()
+          if image_data and embedding:
+              image = cv2.imdecode(np.frombuffer(image_data, np.uint8), cv2.IMREAD_COLOR)
 
-                if image is None:
-                    continue
+              if image is None:
+                  continue
 
-                # Compute the blur and angle scores
-                blur_score = self.detect_blur(image)
-                angle_score = self.calculate_face_angle(image)
+              # Compute the blur and angle scores
+              blur_score = self.detect_blur(image)
+              angle_score = self.calculate_face_angle(image)
 
-                # Calculate quality score
-                quality_score = blur_score - (angle_score / 10)
+              # Calculate quality score
+              quality_score = blur_score - (angle_score / 10)
 
-                if quality_score > best_quality_score:
-                    best_quality_score = quality_score
-                    best_image = image_data
-                    best_embedding = embedding
-                    last_seen = face.last_seen
+              if quality_score > best_quality_score:
+                  best_quality_score = quality_score
+                  best_image = image_data
+                  best_embedding = embedding
+                  last_seen = face.last_seen
 
-        if best_image is not None and best_embedding is not None:
-            matched_face = await self.match_face(best_embedding)
+      # Once we have the best image and embedding, check if it matches an existing face
+      if best_image is not None and best_embedding is not None:
+          matched_face = await self.match_face(best_embedding)
 
-            if matched_face:
-                logger.info(f"Matched face_id: {matched_face.face_id}")
-                await self.create_update_selected_face(matched_face.face_id, best_image, best_embedding, best_quality_score, last_seen)
-            else:
-                logger.info(f"No match found, creating or updating SelectedFace for face_id: {face_id}")
-                await self.create_update_selected_face(face_id, best_image, best_embedding, best_quality_score, last_seen)
+          if matched_face:
+              logger.info(f"Matched face_id: {matched_face.face_id}")
 
-        # Delete all TempFace records after processing
-        await sync_to_async(TempFace.objects.filter(face_id=face_id).delete)()
+              # Update the existing SelectedFace with the latest info
+              await self.create_update_selected_face(matched_face.face_id, best_image, best_embedding, best_quality_score,last_seen)
+
+              # Log the visit in FaceVisit model
+              await self.log_face_visit(matched_face, best_image, last_seen)
+
+          else:
+              # If no match is found, create a new SelectedFace entry
+              logger.info(f"No match found, creating new SelectedFace for face_id: {face_id}")
+              new_face = await self.create_update_selected_face(face_id,best_image, best_embedding, best_quality_score,last_seen)
+
+              # Log the first visit in FaceVisit model
+              await self.log_face_visit(new_face, best_image, last_seen)
+
+      # Delete all TempFace records after processing
+      await sync_to_async(TempFace.objects.filter(face_id=face_id).delete)()
+
+
 
     def detect_blur(self, image):
         # Convert image to grayscale
@@ -367,40 +383,58 @@ class FaceRecognitionProcessor:
         logger.info(f"Detected {len(faces)} faces")
         return np.array(faces)
 
-    async def create_update_selected_face(self, face_id, image_data, embedding, quality_score, last_seen):
-        # Create or update SelectedFace entry
-        try:
-            logger.info(f"Sending face for last_seen {last_seen}...")
-            selected_faces = await sync_to_async(list)(
-                SelectedFace.objects.filter(user=self.user, face_id=face_id)
-            )
-            if selected_faces:
-                # Update existing face
-                selected_face = selected_faces[0]
-                selected_face.image_data = image_data
-                selected_face.embedding = embedding
-                selected_face.last_seen = last_seen
-                selected_face.quality_score = quality_score
-                await sync_to_async(selected_face.save)()
-            else:
-                # Create new face entry
-                new_face = SelectedFace(
-                    user=self.user,
-                    face_id=face_id,
-                    image_data=image_data,
-                    embedding=embedding,
-                    quality_score=quality_score,
-                    last_seen=last_seen,
-                )
-                await sync_to_async(new_face.save)()
+    async def create_update_selected_face(self, face_id,image_data, embedding, quality_score, last_seen):
+      try:
+          logger.info(f"Updating/Creating SelectedFace for face_id: {face_id}")
 
-            logger.info(f"Face {face_id} processed and saved")
-        except Exception as e:
-            logger.error(f"Error updating/creating face {face_id}: {str(e)}")
+          # Fetch or create SelectedFace entry
+          selected_faces = await sync_to_async(list)(
+              SelectedFace.objects.filter(user=self.user, face_id=face_id)
+          )
+          if selected_faces:
+              selected_face = selected_faces[0]
+              # Update the existing face with the latest information
+              selected_face.image_data = image_data
+              selected_face.embedding = embedding
+              selected_face.last_seen = last_seen
+              selected_face.quality_score = quality_score
+              await sync_to_async(selected_face.save)()
+          else:
+              # Create a new SelectedFace entry if none exists
+              selected_face = SelectedFace(
+                  user=self.user,
+                  face_id=face_id,
+                  image_data=image_data,
+                  embedding=embedding,
+                  quality_score=quality_score,
+                  last_seen=last_seen,
+              )
+              await sync_to_async(selected_face.save)()
+          # Send notification for the new face
+          logger.info(f"Sending notification for last_seen {last_seen}...")
+          await self.send_notification(face_id, last_seen, image_data)
+    
+     
+          return selected_face
+      except Exception as e:
+          logger.error(f"Error updating/creating face {face_id}: {str(e)}")
+      
+    
+    async def log_face_visit(self, selected_face, image_data, detected_time):
+      try:
+          logger.info(f"Logging visit for face_id: {selected_face.face_id}")
 
-        # Send notification for the new face
-        logger.info(f"Sending notification for last_seen {last_seen}...")
-        await self.send_notification(face_id, last_seen, image_data)
+          # Create a new FaceVisit entry for each detection
+          face_visit = await sync_to_async(FaceVisit.objects.create)(
+              selected_face=selected_face,
+              image_data=image_data,
+              detected_time=detected_time,
+              #camera_name=self.camera_name  # Include camera name or other metadata if needed
+          )
+          logger.info(f"Logged FaceVisit for face_id: {selected_face.face_id}")
+      except Exception as e:
+          logger.error(f"Error logging FaceVisit for face_id {selected_face.face_id}: {str(e)}")
+
 
     async def send_notification(self, face_id, last_seen, encoded_image_data):
         """
@@ -451,7 +485,7 @@ class FaceRecognitionProcessor:
                 user=self.user,
                 face_id=face_id,
                 camera_name=self.camera_name,  # Replace with actual camera name
-                detected_time=formatted_last_seen,
+                detected_time= last_seen_ist,
                 notification_sent=True,
                 image_data=image_bytes  # Store decoded binary image data
             )
@@ -484,58 +518,65 @@ class FaceRecognitionProcessor:
 
     def get_face_analytics(self):
         try:
-            logger.info("Calculating face analytics...")
-            today = timezone.now().date()
+            logger.info("Calculating face analytics based on face visits...")
+            now = timezone.now()
 
             # Define time periods for analytics
-            periods = {
-                'today': (today, today + timedelta(days=1)),
-                'week': (today - timedelta(days=7), today + timedelta(days=1)),
-                'month': (today - timedelta(days=30), today + timedelta(days=1)),
-                'year': (today - timedelta(days=365), today + timedelta(days=1)),
-                'all': (None, None)  # For all-time data
-            }
+            start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)  # Midnight today
+            past_7_days = now - timedelta(days=7)  # Past 7 days from now
+            past_30_days = now - timedelta(days=30)  # Past 30 days from now
+            past_365_days = now - timedelta(days=365)  # Past 365 days from now
 
-            analytics = {}
-            for period, (start_date, end_date) in periods.items():
-                # Base query for known faces
-                query = Q(user=self.user, is_known=True)
+            # Query all FaceVisit records for the user
+            total_visits_query = FaceVisit.objects.filter(selected_face__user=self.user)
 
-                # If there's a specific start and end date, apply range filtering
-                if start_date and end_date:
-                    query &= Q(last_seen__range=(start_date, end_date))
+            # Total faces (based on number of face visits)
+            total_visits = total_visits_query.count()
 
-                # Count known faces for the given time period
-                known_faces = SelectedFace.objects.filter(query).count()
-                analytics[f'known_faces_{period}'] = known_faces
+            # Count known and unknown faces based on visits
+            known_faces_query = total_visits_query.filter(selected_face__is_known=True)
+            unknown_faces_query = total_visits_query.filter(selected_face__is_known=False)
 
-            # Calculate total faces (all time)
-            total_faces = SelectedFace.objects.filter(user=self.user).count()
+            known_faces_count = known_faces_query.count()
+            unknown_faces_count = unknown_faces_query.count()
 
-            # Calculate unknown faces (all time)
-            unknown_faces = SelectedFace.objects.filter(user=self.user, is_known=False).count()
-
-            # Get the most common face IDs (all time)
-            face_counts = (
-                SelectedFace.objects.filter(user=self.user)
-                .values('face_id')
+            # Group by face_id to count how many times each face was detected (all time)
+            face_counts_all_time = (
+                total_visits_query
+                .values('selected_face__face_id')
                 .annotate(count=Count('id'))
                 .order_by('-count')
             )
 
-            # Update analytics dictionary with total and unknown face data
-            analytics.update({
-                'total_faces': total_faces,
-                'unknown_faces': unknown_faces,
-                'known_faces':known_faces,
-                'face_counts': list(face_counts),  # List of face ID counts
-                'date': today.isoformat()  # Include today's date for reference
-            })
+            # Face counts for today
+            face_counts_today = known_faces_query.filter(detected_time__gte=start_of_today).count()
+
+            # Face counts for the past 7 days (week)
+            face_counts_week = known_faces_query.filter(detected_time__gte=past_7_days).count()
+
+            # Face counts for the past 30 days (month)
+            face_counts_month = known_faces_query.filter(detected_time__gte=past_30_days).count()
+
+            # Face counts for the past 365 days (year)
+            face_counts_year = known_faces_query.filter(detected_time__gte=past_365_days).count()
+
+            # Construct analytics response
+            analytics = {
+                'date': now.date().isoformat(),
+                'total_faces': total_visits,  # Total number of visits across all faces
+                'known_faces': known_faces_count,  # Number of known faces (based on visits)
+                'unknown_faces': unknown_faces_count,  # Number of unknown faces (based on visits)
+                'face_counts': [{"face_id": fc["selected_face__face_id"], "count": fc["count"]} for fc in face_counts_all_time],
+                'known_faces_today': face_counts_today,
+                'known_faces_week': face_counts_week,
+                'known_faces_month': face_counts_month,
+                'known_faces_year': face_counts_year,
+                'known_faces_all': known_faces_count  # Overall known faces count
+            }
 
             logger.info(f"Face analytics calculated: {analytics}")
-            return analytics  # Return the full analytics dictionary
+            return analytics
 
         except Exception as e:
-            # Catch exceptions and log the error
             logger.error(f"Error getting face analytics: {str(e)}")
-            return None  # Return None in case of an error
+            return None

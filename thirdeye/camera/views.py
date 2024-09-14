@@ -1,5 +1,5 @@
 # camera/views.py
-# camera/views.py
+
 from rest_framework import status, generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -215,7 +215,7 @@ class FaceAnalyticsView(APIView):
                             known_faces_week=analytics['known_faces_week'],
                             known_faces_month=analytics['known_faces_month'],
                             known_faces_year=analytics['known_faces_year'],
-                            known_faces_all=analytics['known_faces_all'],  # Use the correct key here
+                            known_faces_all=analytics['known_faces_all'],
                             unknown_faces=analytics['unknown_faces'],
                             face_counts=analytics['face_counts'],
                         )
