@@ -24,12 +24,12 @@ class TempFace(models.Model):
 class SelectedFace(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='selected_faces', null=True, blank=True)
     face_id = models.CharField(max_length=100)
-    #image_data = models.BinaryField(null=True, blank=True)
+    image_data = models.BinaryField(null=True, blank=True)
     embedding = models.JSONField(null=True, blank=True)  # Store face embedding
     quality_score = models.FloatField(default=0.0)
     last_seen = models.DateTimeField(default=timezone.now)
-    #timestamp = models.DateTimeField(default=timezone.now)
-    #blur_score = models.FloatField(default=0.0)
+    timestamp = models.DateTimeField(default=timezone.now)
+    blur_score = models.FloatField(default=0.0)
     is_known = models.BooleanField(default=False)  # Indicates if the face is known
     date_seen = models.DateField(default=timezone.now)  # Store the date of the last seen
 
@@ -45,7 +45,7 @@ class FaceVisit(models.Model):
     selected_face = models.ForeignKey(SelectedFace, on_delete=models.CASCADE, related_name='face_visits')  # Define related_name
     image_data = models.BinaryField(null=True, blank=True)
     detected_time = models.DateTimeField(default=timezone.now)
-   # camera_name = models.CharField(max_length=255)
+    date_seen = models.DateField(default=timezone.now) 
 
     def __str__(self):
         return f"FaceVisit for {self.selected_face.face_id} at {self.detected_time}"

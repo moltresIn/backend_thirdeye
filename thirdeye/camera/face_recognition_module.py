@@ -339,6 +339,9 @@ class FaceRecognitionProcessor:
               # Log the first visit in FaceVisit model
               await self.log_face_visit(new_face, best_image, last_seen)
 
+          # Store face details and image by date
+          #await self.store_face_by_date(face_id, best_image, last_seen)
+
       # Delete all TempFace records after processing
       await sync_to_async(TempFace.objects.filter(face_id=face_id).delete)()
 
@@ -397,6 +400,7 @@ class FaceRecognitionProcessor:
               selected_face.image_data = image_data
               selected_face.embedding = embedding
               selected_face.last_seen = last_seen
+              selected_face.date_seen=last_seen.date
               selected_face.quality_score = quality_score
               await sync_to_async(selected_face.save)()
           else:
@@ -408,9 +412,12 @@ class FaceRecognitionProcessor:
                   embedding=embedding,
                   quality_score=quality_score,
                   last_seen=last_seen,
+                  date_seen=last_seen.date
               )
               await sync_to_async(selected_face.save)()
           # Send notification for the new face
+          logger.info(f"Sending notification for update_date_seen {selected_face.date_seen}...")
+          logger.info(f"Sending notification for date_seen {date_seen}...") 
           logger.info(f"Sending notification for last_seen {last_seen}...")
           await self.send_notification(face_id, last_seen, image_data)
     
@@ -429,11 +436,15 @@ class FaceRecognitionProcessor:
               selected_face=selected_face,
               image_data=image_data,
               detected_time=detected_time,
+              date_seen=detected_time.date()
               #camera_name=self.camera_name  # Include camera name or other metadata if needed
           )
           logger.info(f"Logged FaceVisit for face_id: {selected_face.face_id}")
+          logger.info(f"Logged FaceVisit for date_seen: {dete_seen}")
       except Exception as e:
           logger.error(f"Error logging FaceVisit for face_id {selected_face.face_id}: {str(e)}")
+
+    
 
 
     async def send_notification(self, face_id, last_seen, encoded_image_data):

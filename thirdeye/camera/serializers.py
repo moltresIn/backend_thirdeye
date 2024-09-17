@@ -31,6 +31,8 @@ class TempFaceSerializer(serializers.ModelSerializer):
 class FaceVisitSerializer(serializers.ModelSerializer):
     detected_time = serializers.SerializerMethodField()
     image = serializers.SerializerMethodField()
+    #date_based_image = serializers.SerializerMethodField()
+
 
     class Meta:
         model = FaceVisit
@@ -49,36 +51,36 @@ class FaceVisitSerializer(serializers.ModelSerializer):
             return base64.b64encode(obj.image_data).decode('utf-8')
         return None
 
+    #def get_date_based_image(self, obj):
+    #    if obj.date_based_image_path:
+    #        with open(obj.date_based_image_path, 'rb') as f:
+    #            return base64.b64encode(f.read()).decode('utf-8')
+    #    return None
+
 class SelectedFaceSerializer(serializers.ModelSerializer):
-    #image = serializers.SerializerMethodField()
-    #last_seen = serializers.SerializerMethodField()
-    face_visits = FaceVisitSerializer(many=True, read_only=True)  # Use face_visits as related_name
-    total_visits = serializers.SerializerMethodField()  # Count of visits
+    face_visits = serializers.SerializerMethodField()
+    total_visits = serializers.SerializerMethodField()
 
     class Meta:
         model = SelectedFace
         fields = [
             'id', 'user', 'face_id', 'quality_score', 
-             'is_known', 'date_seen', 
-            'face_visits', 'total_visits'
+            'is_known', 'date_seen', 'face_visits', 'total_visits'
         ]
 
-    #def get_image(self, obj):
-     #   """Encode image data to base64."""
-      #  if obj.image_data:
-       #     return base64.b64encode(obj.image_data).decode('utf-8')
-        #return None
-
-    #def get_last_seen(self, obj):
-     #   """Convert last_seen to local time and format."""
-      #  if obj.last_seen:
-      #      local_time = timezone.localtime(obj.last_seen)
-      #      return local_time.strftime('%I:%M %p')
-      #  return None
+    def get_face_visits(self, obj):
+        date_seen = self.context.get('date_seen')
+        if date_seen:
+            visits = obj.face_visits.filter(date_seen=date_seen)
+        else:
+            visits = obj.face_visits.all()
+        return FaceVisitSerializer(visits, many=True).data
 
     def get_total_visits(self, obj):
-        """Return the count of related FaceVisit entries."""
-        return obj.face_visits.count()  # Using the related_name defined in the FaceVisit model
+        date_seen = self.context.get('date_seen')
+        if date_seen:
+            return obj.face_visits.filter(date_seen=date_seen).count()
+        return obj.face_visits.count()
 
 
 class StaticCameraSerializer(serializers.ModelSerializer):

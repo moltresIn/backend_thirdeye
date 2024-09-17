@@ -1,10 +1,10 @@
 # camera/views.py
-
+from django.db.models import Prefetch
 from rest_framework import status, generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from .models import StaticCamera, DDNSCamera, CameraStream, SelectedFace, TempFace, FaceAnalytics,NotificationLog
+from .models import StaticCamera, DDNSCamera, CameraStream, SelectedFace, TempFace, FaceAnalytics,NotificationLog,FaceVisit
 from .serializers import (
     StaticCameraSerializer, DDNSCameraSerializer, CameraStreamSerializer, 
     SelectedFaceSerializer, TempFaceSerializer, FaceAnalyticsSerializer,NotificationLogSerializer
@@ -128,14 +128,8 @@ class FaceView(generics.ListAPIView):
 
         if date_str:
             try:
-                local_tz = pytz.timezone('Asia/Kolkata')
                 date = datetime.strptime(date_str, '%Y-%m-%d').date()
-                start_datetime = local_tz.localize(datetime.combine(date, datetime.min.time()))
-                end_datetime = start_datetime + timedelta(days=1)
-                start_datetime_utc = start_datetime.astimezone(pytz.UTC)
-                end_datetime_utc = end_datetime.astimezone(pytz.UTC)
-                
-                queryset = queryset.filter(last_seen__gte=start_datetime_utc, last_seen__lt=end_datetime_utc)
+                queryset = queryset.filter(date_seen=date)
                 filters_applied.append(f'date={date}')
             except ValueError:
                 logger.error(f'FaceView.get_queryset: Invalid date format: {date_str}')
@@ -148,8 +142,13 @@ class FaceView(generics.ListAPIView):
 
         logger.info(f'FaceView.get_queryset: Applied filters: {", ".join(filters_applied)}')
         logger.info(f'FaceView.get_queryset: Returning queryset with {queryset.count()} items')
-        
         return queryset
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['date_seen'] = self.request.query_params.get('date')
+        return context
+
 
 class RenameFaceView(APIView):
     permission_classes = [IsAuthenticated]
