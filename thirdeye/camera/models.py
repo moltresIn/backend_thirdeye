@@ -42,14 +42,18 @@ class SelectedFace(models.Model):
 
 # Model to store each instance a face is detected
 class FaceVisit(models.Model):
-    selected_face = models.ForeignKey(SelectedFace, on_delete=models.CASCADE, related_name='face_visits')  # Define related_name
+    selected_face = models.ForeignKey(SelectedFace, on_delete=models.CASCADE, related_name='face_visits')
     image_data = models.BinaryField(null=True, blank=True)
     detected_time = models.DateTimeField(default=timezone.now)
-    date_seen = models.DateField(default=timezone.now) 
+    date_seen = models.DateField(default=timezone.now)  # Add this line
 
     def __str__(self):
         return f"FaceVisit for {self.selected_face.face_id} at {self.detected_time}"
 
+    def save(self, *args, **kwargs):
+        if not self.date_seen:
+            self.date_seen = self.detected_time.date()
+        super().save(*args, **kwargs)
 
 # Model to store static camera details
 class StaticCamera(models.Model):

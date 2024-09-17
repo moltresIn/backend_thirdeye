@@ -7,7 +7,7 @@ from deep_sort_realtime.deep_sort import nn_matching
 from deep_sort_realtime.deep_sort.detection import Detection
 from deep_sort_realtime.deep_sort.tracker import Tracker
 import os
-from datetime import date, timedelta
+from datetime import date, timedelta,datetime
 import logging
 import asyncio
 import torch
@@ -525,68 +525,66 @@ class FaceRecognitionProcessor:
 
         except Exception as e:
             logger.error(f"Error renaming face_id: {str(e)}", exc_info=True)
-
+    
     def get_face_analytics(self):
-        try:
-            logger.info("Calculating face analytics based on face visits...")
-            now = timezone.now()
+      try:
+          logger.info("Calculating face analytics based on face visits...")
+          now = timezone.now()
+          today = now.date()
 
-            # Define time periods for analytics
-            start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)  # Midnight today
-            past_7_days = now - timedelta(days=7)  # Past 7 days from now
-            past_30_days = now - timedelta(days=30)  # Past 30 days from now
-            past_365_days = now - timedelta(days=365)  # Past 365 days from now
+          # Define time periods for analytics
+          periods = {
+              'today': (today, today + timedelta(days=1)),
+              'week': (today - timedelta(days=7), today + timedelta(days=1)),
+              'month': (today - timedelta(days=30), today + timedelta(days=1)),
+              'year': (today - timedelta(days=365), today + timedelta(days=1)),
+              'all': (None, None)  # All-time data
+          }
 
-            # Query all FaceVisit records for the user
-            total_visits_query = FaceVisit.objects.filter(selected_face__user=self.user)
+          # Query all FaceVisit records for the user
+          total_visits_query = FaceVisit.objects.filter(selected_face__user=self.user)
+        
+          # Count known and unknown faces for each period
+          analytics = {}
+          for period, (start_date, end_date) in periods.items():
+              query = total_visits_query.filter(selected_face__is_known=True)
+            
+              if start_date and end_date:
+                  query = query.filter(detected_time__range=(start_date, end_date))
+            
+              # Known and unknown faces for the period
+              known_faces_count = query.count()
+              unknown_faces_count = total_visits_query.filter(selected_face__is_known=False, detected_time__range=(start_date, end_date)).count()
 
-            # Total faces (based on number of face visits)
-            total_visits = total_visits_query.count()
+              analytics[period] = {
+                  'known_faces': known_faces_count,
+                  'unknown_faces': unknown_faces_count,
+                  'face_counts': query.values('selected_face__face_id').annotate(count=Count('id')).order_by('-count'),
+              }
 
-            # Count known and unknown faces based on visits
-            known_faces_query = total_visits_query.filter(selected_face__is_known=True)
-            unknown_faces_query = total_visits_query.filter(selected_face__is_known=False)
+          # Serialize face_counts for storage in the database (convert QuerySet to list of dicts)
+          face_counts_serialized = [
+              {'face_id': item['selected_face__face_id'], 'count': item['count']}
+              for item in analytics['all']['face_counts']
+          ]
 
-            known_faces_count = known_faces_query.count()
-            unknown_faces_count = unknown_faces_query.count()
+          # Store the analytics for today
+          today_analytics = {
+              'date': today.isoformat(),
+              'total_faces': total_visits_query.count(),
+              'known_faces_today': analytics['today']['known_faces'],
+              'known_faces_week': analytics['week']['known_faces'],
+              'known_faces_month': analytics['month']['known_faces'],
+              'known_faces_year': analytics['year']['known_faces'],
+              'known_faces_all': analytics['all']['known_faces'],
+              'unknown_faces': analytics['today']['unknown_faces'],  # Storing today's unknown faces
+              'face_counts': face_counts_serialized,  # Serialized face counts
+          }
 
-            # Group by face_id to count how many times each face was detected (all time)
-            face_counts_all_time = (
-                total_visits_query
-                .values('selected_face__face_id')
-                .annotate(count=Count('id'))
-                .order_by('-count')
-            )
+          logger.info(f"Face analytics calculated for periods: {today_analytics}")
+          return today_analytics
 
-            # Face counts for today
-            face_counts_today = known_faces_query.filter(detected_time__gte=start_of_today).count()
+      except Exception as e:
+          logger.error(f"Error getting face analytics: {str(e)}")
+          return None
 
-            # Face counts for the past 7 days (week)
-            face_counts_week = known_faces_query.filter(detected_time__gte=past_7_days).count()
-
-            # Face counts for the past 30 days (month)
-            face_counts_month = known_faces_query.filter(detected_time__gte=past_30_days).count()
-
-            # Face counts for the past 365 days (year)
-            face_counts_year = known_faces_query.filter(detected_time__gte=past_365_days).count()
-
-            # Construct analytics response
-            analytics = {
-                'date': now.date().isoformat(),
-                'total_faces': total_visits,  # Total number of visits across all faces
-                'known_faces': known_faces_count,  # Number of known faces (based on visits)
-                'unknown_faces': unknown_faces_count,  # Number of unknown faces (based on visits)
-                'face_counts': [{"face_id": fc["selected_face__face_id"], "count": fc["count"]} for fc in face_counts_all_time],
-                'known_faces_today': face_counts_today,
-                'known_faces_week': face_counts_week,
-                'known_faces_month': face_counts_month,
-                'known_faces_year': face_counts_year,
-                'known_faces_all': known_faces_count  # Overall known faces count
-            }
-
-            logger.info(f"Face analytics calculated: {analytics}")
-            return analytics
-
-        except Exception as e:
-            logger.error(f"Error getting face analytics: {str(e)}")
-            return None

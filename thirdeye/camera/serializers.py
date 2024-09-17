@@ -37,14 +37,12 @@ class FaceVisitSerializer(serializers.ModelSerializer):
         fields = ['detected_time', 'image']
 
     def get_detected_time(self, obj):
-        """Convert detected_time to local time and format."""
         if obj.detected_time:
             local_time = timezone.localtime(obj.detected_time)
             return local_time.strftime('%I:%M %p')
         return None
 
     def get_image(self, obj):
-        """Encode image data to base64."""
         if obj.image_data:
             return base64.b64encode(obj.image_data).decode('utf-8')
         return None
@@ -57,24 +55,15 @@ class SelectedFaceSerializer(serializers.ModelSerializer):
         model = SelectedFace
         fields = [
             'id', 'user', 'face_id', 'quality_score', 
-            'is_known', 'date_seen', 'face_visits', 'total_visits'
+            'is_known', 'face_visits', 'total_visits'
         ]
 
     def get_face_visits(self, obj):
-        date_seen = self.context.get('date_seen')
-        if date_seen:
-            visits = getattr(obj, 'filtered_face_visits', [])
-        else:
-            visits = obj.face_visits.all()
-        
-        serialized_visits = FaceVisitSerializer(visits, many=True).data
-        return serialized_visits if serialized_visits else None
+        visits = getattr(obj, 'filtered_face_visits', [])
+        return FaceVisitSerializer(visits, many=True).data
 
     def get_total_visits(self, obj):
-        date_seen = self.context.get('date_seen')
-        if date_seen:
-            return len(getattr(obj, 'filtered_face_visits', []))
-        return obj.face_visits.count()
+        return len(getattr(obj, 'filtered_face_visits', []))
 
 
 class StaticCameraSerializer(serializers.ModelSerializer):

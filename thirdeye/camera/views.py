@@ -117,48 +117,69 @@ class GetStreamURLView(APIView):
 class FaceView(generics.ListAPIView):
     serializer_class = SelectedFaceSerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = DynamicPageSizePagination
+    
+    # Remove pagination for date-based querying
+    pagination_class = None
+
+    # Swagger query parameters documentation
+    @swagger_auto_schema(
+        manual_parameters=[
+            openapi.Parameter(
+                'date', openapi.IN_QUERY, description="Date in format YYYY-MM-DD", type=openapi.TYPE_STRING, required=False
+            ),
+            openapi.Parameter(
+                'is_known', openapi.IN_QUERY, description="Filter by known or unknown faces (true/false)", type=openapi.TYPE_BOOLEAN, required=False
+            )
+        ]
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
         logger.info('FaceView.get_queryset: Building queryset for SelectedFace')
-        queryset = SelectedFace.objects.filter(user=self.request.user)
         
-        filters_applied = []
-
+        # Get query parameters
         date_str = self.request.query_params.get('date')
         is_known = self.request.query_params.get('is_known')
 
+        # Start with queryset filtered by the authenticated user
+        queryset = SelectedFace.objects.filter(user=self.request.user)
+
+        # Filter by date if provided
         if date_str:
             try:
+                # Convert date string to date object
                 date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
-                queryset = queryset.filter(date_seen=date)
-                filters_applied.append(f'date={date}')
-                
+                queryset = queryset.filter(face_visits__date_seen=date).distinct()
+
                 # Prefetch related FaceVisit objects for the specific date
                 queryset = queryset.prefetch_related(
-                    Prefetch('face_visits', 
-                             queryset=FaceVisit.objects.filter(date_seen=date),
-                             to_attr='filtered_face_visits')
+                    Prefetch(
+                        'face_visits',
+                        queryset=FaceVisit.objects.filter(date_seen=date).order_by('-detected_time'),
+                        to_attr='filtered_face_visits'
+                    )
                 )
             except ValueError:
                 logger.error(f'FaceView.get_queryset: Invalid date format: {date_str}')
                 return queryset.none()
         else:
-            # If no date is specified, prefetch all related FaceVisit objects
-            queryset = queryset.prefetch_related('face_visits')
+            # If no date is provided, return an empty queryset
+            queryset = queryset.none()
 
+        # Optionally filter by known/unknown faces
         if is_known is not None:
             is_known = is_known.lower() == 'true'
             queryset = queryset.filter(is_known=is_known)
-            filters_applied.append(f'is_known={is_known}')
 
+        # Order by last_seen in descending order
         queryset = queryset.order_by('-last_seen')
 
-        logger.info(f'FaceView.get_queryset: Applied filters: {", ".join(filters_applied)}')
         logger.info(f'FaceView.get_queryset: Returning queryset with {queryset.count()} items')
         return queryset
 
     def get_serializer_context(self):
+        # Add 'date_seen' to serializer context if available
         context = super().get_serializer_context()
         context['date_seen'] = self.request.query_params.get('date')
         return context
@@ -199,48 +220,49 @@ class FaceAnalyticsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        try:
-            # Initialize the face analytics processor with the authenticated user
-            face_processor = FaceRecognitionProcessor(user=request.user)
-            
-            # Get the analytics data
-            analytics = face_processor.get_face_analytics()
+      try:
+          # Initialize the face analytics processor with the authenticated user
+          face_processor = FaceRecognitionProcessor(user=request.user)
 
-            if analytics:
-                with transaction.atomic():
-                    try:
-                        # Try to get existing entry for today
-                        face_analytics = FaceAnalytics.objects.get(
-                            user=request.user,
-                            date=analytics['date']
-                        )
-                        # Update existing entry
-                        for key, value in analytics.items():
-                            setattr(face_analytics, key, value)
-                        face_analytics.save()
-                    except FaceAnalytics.DoesNotExist:
-                        # Create a new entry if it doesn't exist
-                        face_analytics = FaceAnalytics.objects.create(
-                            user=request.user,
-                            date=analytics['date'],
-                            total_faces=analytics['total_faces'],
-                            known_faces_today=analytics['known_faces_today'],
-                            known_faces_week=analytics['known_faces_week'],
-                            known_faces_month=analytics['known_faces_month'],
-                            known_faces_year=analytics['known_faces_year'],
-                            known_faces_all=analytics['known_faces_all'],
-                            unknown_faces=analytics['unknown_faces'],
-                            face_counts=analytics['face_counts'],
-                        )
+          # Get the analytics data
+          analytics = face_processor.get_face_analytics()
 
-                # Serialize the response and return the data
-                serializer = FaceAnalyticsSerializer(face_analytics)
-                return Response(serializer.data, status=status.HTTP_200_OK)
-            else:
-                return Response({"error": "Failed to retrieve face analytics"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        except Exception as e:
-            logger.error(f"Error in FaceAnalyticsView: {str(e)}")
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+          if analytics:
+              with transaction.atomic():
+                  try:
+                      # Try to get existing entry for today
+                      face_analytics = FaceAnalytics.objects.get(
+                          user=request.user,
+                          date=analytics['date']
+                      )
+                      # Update existing entry
+                      for key, value in analytics.items():
+                          setattr(face_analytics, key, value)
+                      face_analytics.save()
+                  except FaceAnalytics.DoesNotExist:
+                      # Create a new entry if it doesn't exist
+                      face_analytics = FaceAnalytics.objects.create(
+                          user=request.user,
+                          date=analytics['date'],
+                          total_faces=analytics['total_faces'],
+                          known_faces_today=analytics['known_faces_today'],
+                          known_faces_week=analytics['known_faces_week'],
+                          known_faces_month=analytics['known_faces_month'],
+                          known_faces_year=analytics['known_faces_year'],
+                          known_faces_all=analytics['known_faces_all'],
+                          unknown_faces=analytics['unknown_faces'],
+                          face_counts=analytics['face_counts'],
+                      )
+ 
+              # Serialize the response and return the data
+              serializer = FaceAnalyticsSerializer(face_analytics)
+              return Response(serializer.data, status=status.HTTP_200_OK)
+          else:
+              return Response({"error": "Failed to retrieve face analytics"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+      except Exception as e:
+          logger.error(f"Error in FaceAnalyticsView: {str(e)}")
+          return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 
