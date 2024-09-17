@@ -1,5 +1,6 @@
 # camera/views.py
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Exists, OuterRef,Count
+from django.utils.timezone import make_aware
 from rest_framework import status, generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -15,8 +16,9 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django.shortcuts import get_object_or_404
 from django.core.cache import cache
+from django.utils.dateparse import parse_date
 from django.utils import timezone
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,time
 import pytz
 import logging
 from .face_recognition_module import FaceRecognitionProcessor
@@ -119,7 +121,7 @@ class FaceView(generics.ListAPIView):
 
     def get_queryset(self):
         logger.info('FaceView.get_queryset: Building queryset for SelectedFace')
-        queryset = SelectedFace.objects.filter(user=self.request.user).order_by('-last_seen')
+        queryset = SelectedFace.objects.filter(user=self.request.user)
         
         filters_applied = []
 
@@ -128,17 +130,29 @@ class FaceView(generics.ListAPIView):
 
         if date_str:
             try:
-                date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
                 queryset = queryset.filter(date_seen=date)
                 filters_applied.append(f'date={date}')
+                
+                # Prefetch related FaceVisit objects for the specific date
+                queryset = queryset.prefetch_related(
+                    Prefetch('face_visits', 
+                             queryset=FaceVisit.objects.filter(date_seen=date),
+                             to_attr='filtered_face_visits')
+                )
             except ValueError:
                 logger.error(f'FaceView.get_queryset: Invalid date format: {date_str}')
                 return queryset.none()
+        else:
+            # If no date is specified, prefetch all related FaceVisit objects
+            queryset = queryset.prefetch_related('face_visits')
 
         if is_known is not None:
             is_known = is_known.lower() == 'true'
             queryset = queryset.filter(is_known=is_known)
             filters_applied.append(f'is_known={is_known}')
+
+        queryset = queryset.order_by('-last_seen')
 
         logger.info(f'FaceView.get_queryset: Applied filters: {", ".join(filters_applied)}')
         logger.info(f'FaceView.get_queryset: Returning queryset with {queryset.count()} items')

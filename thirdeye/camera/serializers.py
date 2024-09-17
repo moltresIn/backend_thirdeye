@@ -1,4 +1,4 @@
-
+#camera/serilizers.py
 from rest_framework import serializers
 from django.utils import timezone
 import base64
@@ -31,8 +31,6 @@ class TempFaceSerializer(serializers.ModelSerializer):
 class FaceVisitSerializer(serializers.ModelSerializer):
     detected_time = serializers.SerializerMethodField()
     image = serializers.SerializerMethodField()
-    #date_based_image = serializers.SerializerMethodField()
-
 
     class Meta:
         model = FaceVisit
@@ -51,12 +49,6 @@ class FaceVisitSerializer(serializers.ModelSerializer):
             return base64.b64encode(obj.image_data).decode('utf-8')
         return None
 
-    #def get_date_based_image(self, obj):
-    #    if obj.date_based_image_path:
-    #        with open(obj.date_based_image_path, 'rb') as f:
-    #            return base64.b64encode(f.read()).decode('utf-8')
-    #    return None
-
 class SelectedFaceSerializer(serializers.ModelSerializer):
     face_visits = serializers.SerializerMethodField()
     total_visits = serializers.SerializerMethodField()
@@ -71,15 +63,17 @@ class SelectedFaceSerializer(serializers.ModelSerializer):
     def get_face_visits(self, obj):
         date_seen = self.context.get('date_seen')
         if date_seen:
-            visits = obj.face_visits.filter(date_seen=date_seen)
+            visits = getattr(obj, 'filtered_face_visits', [])
         else:
             visits = obj.face_visits.all()
-        return FaceVisitSerializer(visits, many=True).data
+        
+        serialized_visits = FaceVisitSerializer(visits, many=True).data
+        return serialized_visits if serialized_visits else None
 
     def get_total_visits(self, obj):
         date_seen = self.context.get('date_seen')
         if date_seen:
-            return obj.face_visits.filter(date_seen=date_seen).count()
+            return len(getattr(obj, 'filtered_face_visits', []))
         return obj.face_visits.count()
 
 

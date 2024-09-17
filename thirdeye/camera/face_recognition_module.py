@@ -386,63 +386,62 @@ class FaceRecognitionProcessor:
         logger.info(f"Detected {len(faces)} faces")
         return np.array(faces)
 
-    async def create_update_selected_face(self, face_id,image_data, embedding, quality_score, last_seen):
-      try:
-          logger.info(f"Updating/Creating SelectedFace for face_id: {face_id}")
+    async def create_update_selected_face(self, face_id, image_data, embedding, quality_score, last_seen):
+        try:
+            logger.info(f"Updating/Creating SelectedFace for face_id: {face_id}")
 
-          # Fetch or create SelectedFace entry
-          selected_faces = await sync_to_async(list)(
-              SelectedFace.objects.filter(user=self.user, face_id=face_id)
-          )
-          if selected_faces:
-              selected_face = selected_faces[0]
-              # Update the existing face with the latest information
-              selected_face.image_data = image_data
-              selected_face.embedding = embedding
-              selected_face.last_seen = last_seen
-              selected_face.date_seen=last_seen.date
-              selected_face.quality_score = quality_score
-              await sync_to_async(selected_face.save)()
-          else:
-              # Create a new SelectedFace entry if none exists
-              selected_face = SelectedFace(
-                  user=self.user,
-                  face_id=face_id,
-                  image_data=image_data,
-                  embedding=embedding,
-                  quality_score=quality_score,
-                  last_seen=last_seen,
-                  date_seen=last_seen.date
-              )
-              await sync_to_async(selected_face.save)()
-          # Send notification for the new face
-          logger.info(f"Sending notification for update_date_seen {selected_face.date_seen}...")
-          logger.info(f"Sending notification for date_seen {date_seen}...") 
-          logger.info(f"Sending notification for last_seen {last_seen}...")
-          await self.send_notification(face_id, last_seen, image_data)
+            # Convert last_seen to the correct timezone
+            last_seen = last_seen.astimezone(IST)
+            date_seen = last_seen.date()
+
+            # Fetch or create SelectedFace entry
+            selected_face, created = await sync_to_async(SelectedFace.objects.get_or_create)(
+                user=self.user,
+                face_id=face_id,
+                date_seen=date_seen,
+                defaults={
+                    'image_data': image_data,
+                    'embedding': embedding,
+                    'quality_score': quality_score,
+                    'last_seen': last_seen
+                }
+            )
+
+            if not created:
+                # Update the existing face with the latest information
+                selected_face.image_data = image_data
+                selected_face.embedding = embedding
+                selected_face.last_seen = last_seen
+                selected_face.quality_score = quality_score
+                await sync_to_async(selected_face.save)()
+
+            # Send notification for the face
+            await self.send_notification(face_id, last_seen, image_data)
     
-     
-          return selected_face
-      except Exception as e:
-          logger.error(f"Error updating/creating face {face_id}: {str(e)}")
+            return selected_face
+        except Exception as e:
+            logger.error(f"Error updating/creating face {face_id}: {str(e)}")
       
     
     async def log_face_visit(self, selected_face, image_data, detected_time):
-      try:
-          logger.info(f"Logging visit for face_id: {selected_face.face_id}")
+        try:
+            logger.info(f"Logging visit for face_id: {selected_face.face_id}")
 
-          # Create a new FaceVisit entry for each detection
-          face_visit = await sync_to_async(FaceVisit.objects.create)(
-              selected_face=selected_face,
-              image_data=image_data,
-              detected_time=detected_time,
-              date_seen=detected_time.date()
-              #camera_name=self.camera_name  # Include camera name or other metadata if needed
-          )
-          logger.info(f"Logged FaceVisit for face_id: {selected_face.face_id}")
-          logger.info(f"Logged FaceVisit for date_seen: {dete_seen}")
-      except Exception as e:
-          logger.error(f"Error logging FaceVisit for face_id {selected_face.face_id}: {str(e)}")
+            # Convert detected_time to the correct timezone
+            detected_time = detected_time.astimezone(IST)
+            date_seen = detected_time.date()
+
+            # Create a new FaceVisit entry for each detection
+            face_visit = await sync_to_async(FaceVisit.objects.create)(
+                selected_face=selected_face,
+                image_data=image_data,
+                detected_time=detected_time,
+                date_seen=date_seen
+            )
+            logger.info(f"Logged FaceVisit for face_id: {selected_face.face_id}, date_seen: {date_seen}")
+        except Exception as e:
+            logger.error(f"Error logging FaceVisit for face_id {selected_face.face_id}: {str(e)}")
+
 
     
 
