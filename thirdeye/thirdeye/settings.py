@@ -9,13 +9,14 @@ https://docs.djangoproject.com/en/5.0/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.0/ref/settings/
 """
+
 import os
 import datetime
 from pathlib import Path
+from decouple import config, Csv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
@@ -23,12 +24,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-#^_vdt36ryy)4-0f8n27p6a9ikvy4^m*=%(y#$-!&lmbbgf6-!'
 
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
 ALLOWED_HOSTS = ['*']
-AUTH_USER_MODEL = 'authentication.User'
 
+
+
+AUTH_USER_MODEL = 'authentication.User'
 
 # Application definition
 
@@ -47,7 +51,6 @@ INSTALLED_APPS = [
     'notifications',
     'authentication',
     'camera',
-    
 ]
 
 CORS_ALLOWED_ORIGINS = [
@@ -80,8 +83,8 @@ SWAGGER_SETTINGS = {
     }
 }
 
-GOOGLE_CLIENT_ID = '48362687558-b7qotc3aea0ne3irtbne2tp2kkghk6it.apps.googleusercontent.com'
-GOOGLE_CLIENT_SECRET='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'
+GOOGLE_CLIENT_ID = config('GOOGLE_CLIENT_ID')
+GOOGLE_CLIENT_SECRET = config('GOOGLE_CLIENT_SECRET')
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -92,8 +95,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
-    
 ]
+
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
     'authentication.backends.EmailBackend',
@@ -117,6 +120,7 @@ TEMPLATES = [
         },
     },
 ]
+
 REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10,
@@ -125,8 +129,6 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     )
 }
-
-
 
 SIMPLE_JWT = {
    'ACCESS_TOKEN_LIFETIME': datetime.timedelta(days=365),  
@@ -143,8 +145,8 @@ CHANNEL_LAYERS = {
         },
     },
 }
-WSGI_APPLICATION = 'thirdeye.wsgi.application'
 
+WSGI_APPLICATION = 'thirdeye.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
@@ -152,13 +154,14 @@ WSGI_APPLICATION = 'thirdeye.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'thirdeye',         # The name of your database
-        'USER': 'Kishor',     # Your database username
-        'PASSWORD': '#Root782qwerty', # Your database password
-        'HOST': 'ec2-13-201-59-248.ap-south-1.compute.amazonaws.com',     # The endpoint of your RDS instance
-        'PORT': '3306',                 # The port on which MySQL is running
+        'NAME': config('DB_NAME'),
+        'USER': config('DB_USER'),
+        'PASSWORD': config('DB_PASSWORD'),
+        'HOST': config('DB_HOST'),
+        'PORT': config('DB_PORT'),
     }
 }
+
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators
 
@@ -177,7 +180,6 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalization
 # https://docs.djangoproject.com/en/5.0/topics/i18n/
 
@@ -189,7 +191,6 @@ USE_I18N = True
 
 USE_TZ = True
 
-
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 
@@ -200,19 +201,16 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
 EMAIL_USE_TLS = True
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
-EMAIL_HOST_USER = 'naveenmaga5@gmail.com'
-EMAIL_HOST_PASSWORD = 'iqui jyeu lqim hkux'
+EMAIL_HOST_USER = config('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
 
 USE_TZ = True
 TIME_ZONE = 'Asia/Kolkata'
-
-
-

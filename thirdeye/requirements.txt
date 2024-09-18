@@ -18,4 +18,4 @@ django-notifications-hq
 mysqlclient
 deep_sort_realtime
 asgiref
-#django-notifications-hq
+
