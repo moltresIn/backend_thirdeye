@@ -122,34 +122,21 @@ class GetStreamURLView(APIView):
 class FaceView(generics.ListAPIView):
     serializer_class = SelectedFaceSerializer
     permission_classes = [IsAuthenticated]
-    
-    # Remove pagination
-    pagination_class = None
-
-    @swagger_auto_schema(
-        manual_parameters=[
-            openapi.Parameter(
-                'date', openapi.IN_QUERY, description="Date in format YYYY-MM-DD", type=openapi.TYPE_STRING, required=True
-            )
-        ]
-    )
-    def get(self, request, *args, **kwargs):
-        return super().get(request, *args, **kwargs)
+    pagination_class = DynamicPageSizePagination
 
     def get_queryset(self):
         logger.info('FaceView.get_queryset: Building queryset for SelectedFace')
         date_str = self.request.query_params.get('date')
+        is_known = self.request.query_params.get('is_known')
 
-        # Start with the queryset for the authenticated user
         queryset = SelectedFace.objects.filter(user=self.request.user)
 
-        # If a date is provided, filter by that date
         if date_str:
             try:
                 date = timezone.datetime.strptime(date_str, '%Y-%m-%d').date()
                 queryset = queryset.filter(face_visits__date_seen=date).distinct()
                 
-                # Prefetch related FaceVisit objects filtered by the specific date
+                # Prefetch related FaceVisit objects for the specific date
                 queryset = queryset.prefetch_related(
                     Prefetch('face_visits', 
                              queryset=FaceVisit.objects.filter(date_seen=date).order_by('-detected_time'),
@@ -159,10 +146,13 @@ class FaceView(generics.ListAPIView):
                 logger.error(f'FaceView.get_queryset: Invalid date format: {date_str}')
                 return queryset.none()
         else:
-            # If no date is specified, return none
+            # If no date is specified, don't prefetch any FaceVisit objects
             queryset = queryset.none()
 
-        # Order the results by 'last_seen'
+        if is_known is not None:
+            is_known = is_known.lower() == 'true'
+            queryset = queryset.filter(is_known=is_known)
+
         queryset = queryset.order_by('-last_seen')
 
         logger.info(f'FaceView.get_queryset: Returning queryset with {queryset.count()} items')

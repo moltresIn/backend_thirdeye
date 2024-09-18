@@ -95,50 +95,44 @@ class FaceRecognitionProcessor:
 
       detected_faces = []
       for track in self.tracker.tracks:
-          # Check if the face is confirmed and still being tracked
           if not track.is_confirmed() or track.time_since_update > 1:
               continue
 
-          # Face bounding box
           bbox = track.to_tlbr()
- 
-          # Track ID used to uniquely identify the face
           track_id = track.track_id
- 
-          # Check if this is a new face entering the frame (not already processed)
-          if track_id not in self.in_frame_tracker:
-              # Process and store this face on entry
-              temp_face = await self.save_face_image(frame, track)
- 
-              if temp_face is None:
-                  continue
 
-              # Mark the face as currently in the frame and processed
-              self.in_frame_tracker[track_id] = True
- 
-              # Convert `last_seen` to Indian Standard Time (IST)
-              last_seen_ist = temp_face.last_seen.astimezone(IST)
- 
-              # Format the `last_seen` to a readable format (12-hour with AM/PM)
-              formatted_last_seen = last_seen_ist.strftime('%I:%M %p')
- 
-              detected_faces.append({
-                  'id': temp_face.id,
-                  'face_id': temp_face.face_id,
-                  'last_seen': formatted_last_seen,  # Return the formatted IST time,
-                  'image_data': temp_face.image_data,
-                  'coordinates': {
-                      'left': bbox[0],
-                      'top': bbox[1],
-                      'right': bbox[2],
-                      'bottom': bbox[3]
-                  }
-              })
-              logger.debug(f"Stored new face: {temp_face.face_id}")
+          # Skip processing if the face is still in the frame and already processed
+          if track_id in self.in_frame_tracker:
+              logger.debug(f"Skipping already processed face with track_id: {track_id}")
+              continue
 
-      # Remove any face that is no longer in the frame (based on tracker status)
+          # Process and store this face as it's entering the frame
+          temp_face = await self.save_face_image(frame, track)
+          if temp_face is None:
+              continue
+ 
+          self.in_frame_tracker[track_id] = True  # Mark the face as processed
+ 
+          last_seen_ist = temp_face.last_seen.astimezone(IST)
+          formatted_last_seen = last_seen_ist.strftime('%I:%M %p')
+ 
+          detected_faces.append({
+              'id': temp_face.id,
+              'face_id': temp_face.face_id,
+              'last_seen': formatted_last_seen,
+              'image_data': temp_face.image_data,
+              'coordinates': {
+                  'left': bbox[0],
+                  'top': bbox[1],
+                  'right': bbox[2],
+                  'bottom': bbox[3]
+              }
+          })
+          logger.debug(f"Stored new face: {temp_face.face_id}")
+
+      # Remove faces that have left the frame
       self.cleanup_exited_faces()
-
+ 
       return frame, detected_faces
 
 
@@ -146,9 +140,9 @@ class FaceRecognitionProcessor:
       # Remove tracks for faces that have left the frame
       for track in self.tracker.tracks:
           if track.time_since_update > 1 and track.track_id in self.in_frame_tracker:
-              # Mark the face as having exited the frame
-              logger.debug(f"Face {track.track_id} has exited the frame")
+              logger.debug(f"Face {track.track_id} has exited the frame, removing from in_frame_tracker")
               del self.in_frame_tracker[track.track_id]
+
 
 
     def generate_feature(self, face, frame):
