@@ -1,6 +1,5 @@
 # camera/face_recognition.py
-from django.db.models import Sum
-from django.db import transaction
+
 import base64
 import cv2
 import numpy as np
@@ -16,8 +15,7 @@ from ultralytics import YOLO
 from django.utils import timezone
 from django.conf import settings
 from asgiref.sync import sync_to_async
-from .models import TempFace, SelectedFace, NotificationLog,FaceVisit,FaceAnalytics
-from .serializers import FaceAnalyticsSerializer
+from .models import TempFace, SelectedFace, NotificationLog,FaceVisit
 import face_recognition
 from django.db.models import Count, Q
 from channels.layers import get_channel_layer
@@ -544,47 +542,48 @@ class FaceRecognitionProcessor:
 
           # Query all FaceVisit records for the user
           total_visits_query = FaceVisit.objects.filter(selected_face__user=self.user)
- 
-          # Calculate total known and unknown faces from the start until today
-          total_faces = total_visits_query.count()
-          known_faces = total_visits_query.filter(selected_face__is_known=True).count()
-          unknown_faces = total_visits_query.filter(selected_face__is_known=False).count()
- 
-          # Period-based known faces counts
-          known_faces_today = total_visits_query.filter(
-              selected_face__is_known=True,
-              detected_time__range=(periods['today'][0], periods['today'][1])
-          ).count()
- 
-          known_faces_week = total_visits_query.filter(
-              selected_face__is_known=True,
-              detected_time__range=(periods['week'][0], periods['week'][1])
-          ).count()
 
-          known_faces_month = total_visits_query.filter(
-              selected_face__is_known=True,
-              detected_time__range=(periods['month'][0], periods['month'][1])
-          ).count()
+          # Calculate known and unknown faces for each period
+          analytics = {}
+          for period, (start_date, end_date) in periods.items():
+              known_faces_query = total_visits_query.filter(selected_face__is_known=True)
+              unknown_faces_query = total_visits_query.filter(selected_face__is_known=False)
+ 
+              if start_date and end_date:
+                  known_faces_query = known_faces_query.filter(detected_time__range=(start_date, end_date))
+                  unknown_faces_query = unknown_faces_query.filter(detected_time__range=(start_date, end_date))
 
-          known_faces_year = total_visits_query.filter(
-              selected_face__is_known=True,
-              detected_time__range=(periods['year'][0], periods['year'][1])
-          ).count()
+              # Count the known and unknown faces within the period
+              known_faces_count = known_faces_query.count()
+              unknown_faces_count = unknown_faces_query.count()
 
-          # Return the analytics data for today (date-wise)
-          analytics = {
+              # Group by face_id to count how many times each face was detected
+              face_counts = known_faces_query.values('selected_face__face_id').annotate(count=Count('id')).order_by('-count')
+ 
+              analytics[period] = {
+                  'known_faces': known_faces_count,
+                  'unknown_faces': unknown_faces_count,
+                  'face_counts': list(face_counts)  # Serialize to list of dicts
+              }
+
+          # Calculate total faces for today (both known and unknown)
+          total_faces_today = total_visits_query.filter(date_seen=today).count()
+ 
+          # Store analytics for the current day (date-wise)
+          today_analytics = {
               'date': today.isoformat(),
-              'total_faces': total_faces,  # Total faces (known + unknown) from the start until today
-              'known_faces': known_faces,  # Total known faces from the start until today
-              'unknown_faces': unknown_faces,  # Total unknown faces from the start until today
-              'known_faces_today': known_faces_today,  # Known faces today
-              'known_faces_week': known_faces_week,  # Known faces this week
-              'known_faces_month': known_faces_month,  # Known faces this month
-              'known_faces_year': known_faces_year,  # Known faces this year
-          }
+              'total_faces': total_faces_today,  # Total faces for today
+              'known_faces_today': analytics['today']['known_faces'],
+              'known_faces_week': analytics['week']['known_faces'],
+              'known_faces_month': analytics['month']['known_faces'],
+              'known_faces_year': analytics['year']['known_faces'],
+              'unknown_faces': analytics['today']['unknown_faces'],  # Only store today's unknown faces
+              'face_counts': analytics['today']['face_counts']  # Storing face counts for today only
+              
+        }
 
-          logger.info(f"Face analytics calculated: {analytics}")
-          return analytics
+          logger.info(f"Face analytics calculated: {today_analytics}")
+          return today_analytics
 
       except Exception as e:
           logger.error(f"Error getting face analytics: {str(e)}")

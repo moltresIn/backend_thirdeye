@@ -101,28 +101,28 @@ class CameraStream(models.Model):
         return f"CameraStream {self.stream_url}"
 
 
-# Model for face analytics data (daily counts)
 class FaceAnalytics(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    date = models.DateField(default=timezone.now)
-    total_faces = models.IntegerField(default=0)
-    known_faces = models.IntegerField(default=0)
-    unknown_faces = models.IntegerField(default=0)
-    face_counts = models.JSONField(default=dict)
-    timestamp = models.DateTimeField(default=timezone.now)
+    date = models.DateField(default=timezone.now)  # The date for the analytics
 
+    # Total faces (includes both known and unknown)
+    total_faces = models.IntegerField(default=0)  # Total faces detected from the start until today
+    known_faces = models.IntegerField(default=0)  # Total known faces from the start until today
+    unknown_faces = models.IntegerField(default=0)  # Total unknown faces from the start until today
+    
+    # Period-based known faces
     known_faces_today = models.IntegerField(default=0)
     known_faces_week = models.IntegerField(default=0)
     known_faces_month = models.IntegerField(default=0)
     known_faces_year = models.IntegerField(default=0)
-    known_faces_all = models.IntegerField(default=0)
+
+    timestamp = models.DateTimeField(default=timezone.now)  # When the analytics were last updated
 
     class Meta:
-        unique_together = ('user', 'date')
+        unique_together = ('user', 'date')  # Each user has unique analytics for each day
 
     def __str__(self):
         return f"FaceAnalytics for {self.user.username} on {self.date}"
-
 
 # Model for logging notifications sent to users when a face is detected
 class NotificationLog(models.Model):
