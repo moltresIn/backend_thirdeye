@@ -116,6 +116,9 @@ class FaceAnalytics(models.Model):
     known_faces_month = models.IntegerField(default=0)
     known_faces_year = models.IntegerField(default=0)
 
+    # `facecount` for known persons (cumulative count)
+    facecount = models.JSONField(default=dict)  # Example format: { "face_id": "count" }
+
     timestamp = models.DateTimeField(default=timezone.now)  # When the analytics were last updated
 
     class Meta:

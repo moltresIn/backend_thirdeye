@@ -231,7 +231,8 @@ class FaceAnalyticsView(APIView):
                             known_faces_today=analytics['known_faces_today'],
                             known_faces_week=analytics['known_faces_week'],
                             known_faces_month=analytics['known_faces_month'],
-                            known_faces_year=analytics['known_faces_year']
+                            known_faces_year=analytics['known_faces_year'],
+                            facecount=analytics['facecount']
                         )
 
                 # Serialize the response and return the data
@@ -242,6 +243,7 @@ class FaceAnalyticsView(APIView):
         except Exception as e:
             logger.error(f"Error in FaceAnalyticsView: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 

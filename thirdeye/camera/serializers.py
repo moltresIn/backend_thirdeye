@@ -86,7 +86,8 @@ class FaceAnalyticsSerializer(serializers.ModelSerializer):
         model = FaceAnalytics
         fields = [
             'date', 'total_faces', 'known_faces', 'unknown_faces', 
-            'known_faces_today', 'known_faces_week', 'known_faces_month', 'known_faces_year'
+            'known_faces_today', 'known_faces_week', 'known_faces_month', 
+            'known_faces_year', 'facecount'
         ]
 
 

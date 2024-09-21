@@ -538,18 +538,31 @@ class FaceRecognitionProcessor:
 
           # Query all FaceVisit records for the user
           total_visits_query = FaceVisit.objects.filter(selected_face__user=self.user)
- 
-          # Calculate total known and unknown faces from the start until today
-          total_faces = total_visits_query.count()
-          known_faces = total_visits_query.filter(selected_face__is_known=True).count()
-          unknown_faces = total_visits_query.filter(selected_face__is_known=False).count()
- 
-          # Period-based known faces counts
+
+          # Calculate distinct face counts based on face_id (not individual visits)
+          total_known_faces = (
+              total_visits_query.filter(selected_face__is_known=True)
+              .values('selected_face__face_id')  # Get face IDs
+              .distinct()  # Ensure only unique face IDs
+              .count()  # Count distinct known faces
+          )
+        
+          total_unknown_faces = (
+              total_visits_query.filter(selected_face__is_known=False)
+              .values('selected_face__face_id')
+              .distinct()
+              .count()  # Count distinct unknown faces
+          )
+
+          # Calculate total unique faces (known + unknown)
+          total_faces = total_known_faces + total_unknown_faces
+
+          # Period-specific known faces (based on visits as usual)
           known_faces_today = total_visits_query.filter(
               selected_face__is_known=True,
               detected_time__range=(periods['today'][0], periods['today'][1])
           ).count()
- 
+
           known_faces_week = total_visits_query.filter(
               selected_face__is_known=True,
               detected_time__range=(periods['week'][0], periods['week'][1])
@@ -565,16 +578,28 @@ class FaceRecognitionProcessor:
               detected_time__range=(periods['year'][0], periods['year'][1])
           ).count()
 
-          # Return the analytics data for today (date-wise)
+          # Facecount for known persons (cumulative count)
+          facecount_query = total_visits_query.filter(selected_face__is_known=True)
+          facecount = (
+              facecount_query.values('selected_face__face_id')
+              .annotate(count=Count('id'))
+              .order_by('-count')
+          )
+
+          # Format the facecount result into a dictionary
+          facecount_dict = {fc['selected_face__face_id']: fc['count'] for fc in facecount}
+ 
+          # Construct the analytics response
           analytics = {
               'date': today.isoformat(),
-              'total_faces': total_faces,  # Total faces (known + unknown) from the start until today
-              'known_faces': known_faces,  # Total known faces from the start until today
-              'unknown_faces': unknown_faces,  # Total unknown faces from the start until today
-              'known_faces_today': known_faces_today,  # Known faces today
-              'known_faces_week': known_faces_week,  # Known faces this week
-              'known_faces_month': known_faces_month,  # Known faces this month
-              'known_faces_year': known_faces_year,  # Known faces this year
+              'total_faces': total_faces,  # Total distinct known + unknown faces
+              'known_faces': total_known_faces,  # Distinct known faces
+              'unknown_faces': total_unknown_faces,  # Distinct unknown faces
+              'known_faces_today': known_faces_today,
+              'known_faces_week': known_faces_week,
+              'known_faces_month': known_faces_month,
+              'known_faces_year': known_faces_year,
+              'facecount': facecount_dict  # Cumulative count for known faces
           }
 
           logger.info(f"Face analytics calculated: {analytics}")
@@ -583,4 +608,5 @@ class FaceRecognitionProcessor:
       except Exception as e:
           logger.error(f"Error getting face analytics: {str(e)}")
           return None
+
 
