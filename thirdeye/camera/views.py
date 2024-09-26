@@ -311,6 +311,20 @@ class NotificationLogView(generics.ListAPIView):
 class ActivateSubscriptionView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @swagger_auto_schema(
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'days': openapi.Schema(
+                    type=openapi.TYPE_INTEGER, 
+                    description='Number of days for subscription activation (default is 30)',
+                    default=30
+                ),
+            },
+            required=[]
+        ),
+        responses={200: openapi.Response('Subscription activated successfully')}
+    )
     def post(self, request):
         days = request.data.get('days', 30)  # Default to 30 days if not specified
         subscription, _ = Subscription.objects.get_or_create(user=request.user)

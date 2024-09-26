@@ -163,6 +163,7 @@ class VerifyEmail(views.APIView):
         user_data.pop('verification_code')
         user_data.pop('verification_code_expires_at')
 
+        # Create and activate user
         user = User(
             email=user_data['email'],
             username=user_data['username']
@@ -171,18 +172,25 @@ class VerifyEmail(views.APIView):
         user.is_active = True  # Activate user
         user.is_verified = True  # Mark user as verified
         user.save()
-        # Ensure subscription is created
+
+        # Create subscription and assign trial role
         subscription = Subscription.objects.create(user=user)
         user_role = UserRole.objects.create(user=user, role=UserRole.TRIAL)
 
         # Log subscription creation and trial activation status
         if subscription:
-                is_trial_active = subscription.is_subscription_active()
-                logger.info(f"User {user.username} registered. Trial is {'active' if is_trial_active else 'inactive'}.")
+            is_trial_active = subscription.is_subscription_active()
+            logger.info(f"User {user.username} registered. Trial is {'active' if is_trial_active else 'inactive'}.")
         else:
-                logger.error(f"Failed to create a subscription for user {user.username}.")
-        cache.delete(code)  # Clear the cached data
+            logger.error(f"Failed to create a subscription for user {user.username}.")
+        
+        # Generate tokens for the user
+        tokens = user.tokens()
 
+        # Clear the cached data
+        cache.delete(code)
+
+        # Send verification email
         email_body = f'Hi {user.username}, your email has been successfully verified. You can now log in.'
         data = {
             'email_body': email_body,
@@ -191,7 +199,14 @@ class VerifyEmail(views.APIView):
         }
         Util.send_email(data)
 
-        return Response({'detail': 'Email successfully verified'}, status=status.HTTP_200_OK)
+        # Return response with tokens and user role
+        return Response({
+            'detail': 'Email successfully verified',
+            'access_token': tokens['access'],
+            'refresh_token': tokens['refresh'],
+            'role': user_role.role,
+        }, status=status.HTTP_200_OK)
+
 
 
 class LoginAPIView(generics.GenericAPIView):
