@@ -25,6 +25,12 @@ import logging
 from .face_recognition_module import FaceRecognitionProcessor
 from asgiref.sync import async_to_sync
 from django.db import transaction
+from .permissions import IsPaidUser, IsTrialUser
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from authentication.models import Subscription, UserRole
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +127,7 @@ class GetStreamURLView(APIView):
 
 class FaceView(generics.ListAPIView):
     serializer_class = SelectedFaceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsPaidUser]
     pagination_class = DynamicPageSizePagination
 
     def get_queryset(self):
@@ -198,7 +204,7 @@ class RenameFaceView(APIView):
 
 
 class FaceAnalyticsView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsPaidUser]
 
     def get(self, request):
         try:
@@ -300,3 +306,22 @@ class NotificationLogView(generics.ListAPIView):
 
     def get_queryset(self):
         return NotificationLog.objects.filter(user=self.request.user).order_by('-detected_time')
+
+
+class ActivateSubscriptionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        days = request.data.get('days', 30)  # Default to 30 days if not specified
+        subscription, _ = Subscription.objects.get_or_create(user=request.user)
+        subscription.is_trial = False
+        subscription.is_active = True
+        subscription.start_date = timezone.now()
+        subscription.end_date = timezone.now() + timezone.timedelta(days=days)
+        subscription.save()
+
+        user_role, _ = UserRole.objects.get_or_create(user=request.user)
+        user_role.role = UserRole.PAID
+        user_role.save()
+
+        return Response({"message": "Subscription activated successfully"}, status=status.HTTP_200_OK)

@@ -2,6 +2,7 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 from django.db import models
 from django.utils import timezone
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.conf import settings
 
 class UserManager(BaseUserManager):
     def create_user(self, username, email, password=None):
@@ -51,3 +52,29 @@ class User(AbstractBaseUser, PermissionsMixin):
             'refresh': str(refresh),
             'access': str(refresh.access_token)
         }
+
+
+
+class Subscription(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    start_date = models.DateTimeField(default=timezone.now)
+    end_date = models.DateTimeField(null=True, blank=True)
+    is_trial = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True)
+
+    def is_subscription_active(self):
+        if self.is_trial:
+            return (timezone.now() - self.start_date).days <= 7
+        return self.is_active and (self.end_date is None or timezone.now() <= self.end_date)
+
+class UserRole(models.Model):
+    TRIAL = 'trial'
+    PAID = 'paid'
+    UNPAID = 'unpaid'
+    ROLE_CHOICES = [
+        (TRIAL, 'Trial'),
+        (PAID, 'Paid'),
+        (UNPAID, 'Unpaid'),
+    ]
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default=TRIAL)

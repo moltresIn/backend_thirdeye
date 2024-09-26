@@ -6,7 +6,7 @@ import string
 import logging
 from rest_framework import generics, status, views
 from rest_framework.response import Response
-from .models import User
+from .models import User,Subscription, UserRole
 from .serializers import (
     RegisterSerializer,
     EmailVerificationSerializer,
@@ -19,6 +19,7 @@ from camera.models import CameraStream
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 from django.core.cache import cache
+
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,9 @@ class GoogleSignInView(views.APIView):
 
 
 
+
+
+
 class RegisterView(generics.GenericAPIView):
     serializer_class = RegisterSerializer
 
@@ -112,7 +116,8 @@ class RegisterView(generics.GenericAPIView):
             logger.error(f"Error in registration process: {e}")
             return Response({'error': 'An error occurred while sending the verification email. Please try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        return Response({'detail': 'Verification code sent to your email'}, status=status.HTTP_201_CREATED)
+        return Response({'detail': 'Verification code sent to your email'}, status=status.HTTP_201_CREATED)            
+
 
 
 
@@ -166,6 +171,16 @@ class VerifyEmail(views.APIView):
         user.is_active = True  # Activate user
         user.is_verified = True  # Mark user as verified
         user.save()
+        # Ensure subscription is created
+        subscription = Subscription.objects.create(user=user)
+        user_role = UserRole.objects.create(user=user, role=UserRole.TRIAL)
+
+        # Log subscription creation and trial activation status
+        if subscription:
+                is_trial_active = subscription.is_subscription_active()
+                logger.info(f"User {user.username} registered. Trial is {'active' if is_trial_active else 'inactive'}.")
+        else:
+                logger.error(f"Failed to create a subscription for user {user.username}.")
         cache.delete(code)  # Clear the cached data
 
         email_body = f'Hi {user.username}, your email has been successfully verified. You can now log in.'
@@ -187,6 +202,7 @@ class LoginAPIView(generics.GenericAPIView):
         serializer.is_valid(raise_exception=True)
 
         user = serializer.validated_data['user']
+        user_role = UserRole.objects.get(user=user)
 
         # Retrieve all stream URLs for the user
         streams = CameraStream.objects.filter(user=user)
@@ -199,6 +215,7 @@ class LoginAPIView(generics.GenericAPIView):
             },
             'access_token': str(serializer.validated_data['tokens']['access']),
             'refresh_token': str(serializer.validated_data['tokens']['refresh']),
+            'role': user_role.role,
             'stream_urls': stream_urls,
         }, status=status.HTTP_200_OK)
 
